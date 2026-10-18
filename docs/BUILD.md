@@ -41,3 +41,13 @@ The Android package ID is `io.github.huyeon123.spinwheel`. Keep this ID stable a
 ## Validation performed in the development environment
 
 Both export commands completed successfully with official Godot 4.6.3 templates. The Windows output was inspected as PE32+ x86-64. Android APK signature verification passed (v2/v3), and its manifest and ARM64 library contents were inspected. This is build/package validation, not physical Windows or Android device testing. The GitHub Actions workflow is provided but has not been executed on GitHub.
+
+### Exported-scene integrity gate (0.2.5+)
+
+Every build copies source into a fresh temporary staging directory without `.godot`, `build`, or Git data. It imports there and invalidates converted export resources separately for each platform. Build logs containing script/resource failures reject the build even if Godot returns success.
+
+Before publishing, `verify_windows_assets.sh` loads the EXE's embedded pack with the host Godot engine, and `verify_apk_assets.sh` extracts the actual APK resources. Both run the external `test_exported_startup.gd` to assert the root scene has a script, constructs its UI and has a valid wheel/preset. These checks do not replace native platform runtime testing.
+
+The locally delivered0.2.4 APK and0.2.5 update share this public signer-certificate SHA-256:
+`a30740b4b2f32490fbbe6d081f3a85db84859271d191b933ec57599eb9d5e8f1`
+Keep that signing identity for test updates. A CI-generated debug signer may differ: do not substitute a CI APK as an in-place update without comparing its public certificate. Signing material is never included in source or public releases.
