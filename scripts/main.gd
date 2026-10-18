@@ -220,14 +220,14 @@ func _build() -> void:
  editor_dialog.hide()
  # Android can deliver native insets after the first frame, or change them
  # without changing viewport size when system bars appear/disappear.
- var inset_watch := Timer.new(); inset_watch.wait_time = 0.5; inset_watch.autostart = true; inset_watch.timeout.connect(_refresh_safe_layout); add_child(inset_watch)
+ var inset_watch := Timer.new(); inset_watch.wait_time = 0.1; inset_watch.autostart = true; inset_watch.timeout.connect(_refresh_safe_layout); add_child(inset_watch)
  _responsive.call_deferred()
 
 func _responsive() -> void:
  if bottom_controls == null or action_controls == null or spin_button == null: return
  safe_bounds = SafeLayout.safe_rect(self)
  var status_height := 40.0 if status.visible and not status.text.is_empty() else 0.0
- var layout := SafeLayout.compute_main(Rect2(Vector2.ZERO,size),safe_bounds,status_height)
+ var layout := SafeLayout.compute_main(Rect2(Vector2.ZERO,size),safe_bounds,status_height,OS.has_feature("android") or OS.has_feature("ios"))
  _place_main_control(main_header,layout.header)
  _place_main_control(result_panel,layout.result)
  _place_main_control(body,layout.wheel)

@@ -28,6 +28,36 @@ static func merge_safe_insets(client: Rect2, engine_safe: Rect2,
 	return merged if merged.has_area() else safe
 
 
+static func native_to_client(client: Rect2, render_bounds: Rect2, native_rect: Rect2) -> Rect2:
+	## Native Android view pixels and Godot buffer pixels need not be equal.
+	if not client.has_area() or not render_bounds.has_area() or not native_rect.has_area(): return client
+	var clipped := render_bounds.intersection(native_rect)
+	if not clipped.has_area(): return client
+	var scale := client.size / render_bounds.size
+	return Rect2(client.position + (clipped.position - render_bounds.position) * scale,
+		clipped.size * scale).intersection(client)
+
+
+static func android_safe_client(client: Rect2, engine_safe_native: Rect2, sample: Dictionary) -> Rect2:
+	var native_bounds: Rect2 = sample.get("bounds", Rect2())
+	var render_bounds: Rect2 = sample.get("render_bounds", Rect2())
+	var insets: Vector4 = sample.get("insets", Vector4.ZERO)
+	if not native_bounds.has_area() or not render_bounds.has_area(): return client
+	var native_safe := merge_safe_insets(native_bounds, engine_safe_native, native_bounds, insets)
+	var ime_bottom := maxf(0, float(sample.get("ime_bottom", 0.0)))
+	if ime_bottom > 0: native_safe = exclude_keyboard(native_safe, native_bounds, ime_bottom)
+	return native_to_client(client, render_bounds, native_safe)
+
+
+static func control_to_client_transform(control: Control) -> Transform2D:
+	## CanvasItem.get_screen_transform uses a popup transform which is identity
+	## when subwindows are embedded (forced on Android). It drops window stretch!
+	## Explicit viewport final × canvas transform retains the actual render scale.
+	var transform := control.get_viewport().get_final_transform() * control.get_global_transform_with_canvas()
+	transform.origin += Vector2(DisplayServer.window_get_position(control.get_window().get_window_id()))
+	return transform
+
+
 static func resume_fullscreen() -> void:
 	if not OS.has_feature("android"): return
 	# Drop stale activity geometry after rotation/resume. The old IME baseline
@@ -52,7 +82,7 @@ static func _request_android_sample(origin: Vector2) -> void:
 			push_warning("Native Android insets unavailable; using Godot cutout/keyboard safe area.")
 		return
 	var now := Time.get_ticks_msec()
-	if now - _android_request_ms < 500: return
+	if now - _android_request_ms < 200: return
 	if _android_pending and now - _android_request_ms < 2000: return
 	_android_request_ms = now
 	_android_generation += 1
@@ -66,6 +96,14 @@ static func _request_android_sample(origin: Vector2) -> void:
 	if runnable == null: return
 	_android_pending = true
 	_java_call(wrapper, activity, "runOnUiThread", [runnable])
+
+
+static func java_truth(value: Variant) -> bool:
+	# Godot 4.6 JNI can expose Java jboolean as an integer Variant. Comparing
+	# that Variant directly to true is an invalid INT/BOOL operation in GDScript.
+	if value is bool: return value
+	if value is int: return value != 0
+	return false
 
 
 static func _java_call(wrapper: Object, target: Variant, method: StringName,
@@ -100,7 +138,7 @@ static func _java_insets(wrapper: Object, value: Variant) -> Vector4:
 		var field: Variant = _java_call(wrapper, java_class, "getField", [names[i]])
 		var number: Variant = _java_call(wrapper, field, "getInt", [value])
 		if not number is int: return Vector4(NAN, NAN, NAN, NAN)
-		result[i] = maxf(0, float(number))
+		result[i] = float(number)
 	return result
 
 
@@ -126,48 +164,93 @@ static func _read_android_ui(origin: Vector2, restore: bool) -> Dictionary:
 	var sdk: Variant = version.get("SDK_INT")
 	if not sdk is int: return {}
 	var window: Variant = _java_call(wrapper, activity, "getWindow")
+	var godot: Variant = _java_call(wrapper, activity, "getGodot")
 	var restored := not restore
 	if restore:
-		var godot: Variant = _java_call(wrapper, activity, "getGodot")
 		_java_call(wrapper, godot, "enableEdgeToEdge", [true, true])
 		_java_call(wrapper, godot, "enableImmersiveMode", [true, true])
 		var cutout_ready := _enable_cutout_drawing(wrapper, window, sdk)
-		restored = _java_call(wrapper, godot, "isInEdgeToEdgeMode") == true \
-			and _java_call(wrapper, godot, "isInImmersiveMode") == true and cutout_ready
+		restored = java_truth(_java_call(wrapper, godot, "isInEdgeToEdgeMode")) \
+			and java_truth(_java_call(wrapper, godot, "isInImmersiveMode")) and cutout_ready
 	var decor: Variant = _java_call(wrapper, window, "getDecorView")
 	var root_insets: Variant = _java_call(wrapper, decor, "getRootWindowInsets")
-	# Null is normal before attachment; retry next poll without collapsing UI.
 	if root_insets == null: return {}
 	var width: Variant = _java_call(wrapper, decor, "getWidth")
 	var height: Variant = _java_call(wrapper, decor, "getHeight")
 	if not width is int or not height is int or width <= 0 or height <= 0: return {}
+	var native_bounds := Rect2(Vector2.ZERO, Vector2(width, height))
+	if sdk >= 30:
+		var manager: Variant = _java_call(wrapper, activity, "getWindowManager")
+		var metrics: Variant = _java_call(wrapper, manager, "getCurrentWindowMetrics")
+		var metric_rect := _java_rect(wrapper, _java_call(wrapper, metrics, "getBounds"))
+		# Metrics include system/IME areas. Coordinates below are window-local,
+		# so the display-relative metrics origin must not be added a second time.
+		if metric_rect.has_area(): native_bounds.size = metric_rect.size
+	var render_interface: Variant = _java_call(wrapper, godot, "getRenderView")
+	var render_view: Variant = _java_call(wrapper, render_interface, "getView")
+	var rect_class: Variant = _java_wrap(wrapper, "android.graphics.Rect")
+	var render_rect: Variant = _java_call(wrapper, rect_class, "Rect")
+	_java_call(wrapper, render_view, "getDrawingRect", [render_rect])
+	_java_call(wrapper, decor, "offsetDescendantRectToMyCoords", [render_view, render_rect])
+	var render_bounds := _java_rect(wrapper, render_rect)
+	if not render_bounds.has_area(): return {}
 	var insets := Vector4.ZERO
+	var ime_bottom := 0.0
+	var ime_known := false
 	if sdk >= 30:
 		var types: Variant = _java_wrap(wrapper, "android.view.WindowInsets$Type")
 		var bars: Variant = _java_call(wrapper, types, "systemBars")
+		var navigation: Variant = _java_call(wrapper, types, "navigationBars")
 		var cutout: Variant = _java_call(wrapper, types, "displayCutout")
 		var gestures: Variant = _java_call(wrapper, types, "mandatorySystemGestures")
-		if not bars is int or not cutout is int or not gestures is int: return {}
-		# Reserve measured bar space even while hidden so swipe-revealed bars
-		# cannot obscure controls. IME is deliberately excluded from this mask.
-		insets = _java_insets(wrapper, _java_call(wrapper, root_insets,
-			"getInsetsIgnoringVisibility", [bars | cutout | gestures]))
+		var ime: Variant = _java_call(wrapper, types, "ime")
+		if not bars is int or not navigation is int or not cutout is int or not gestures is int or not ime is int: return {}
+		var visible_bars := _java_insets(wrapper, _java_call(wrapper, root_insets, "getInsets", [bars]))
+		var stable_edges := _java_insets(wrapper, _java_call(wrapper, root_insets,
+			"getInsetsIgnoringVisibility", [navigation | cutout]))
+		var gesture_edges := _java_insets(wrapper, _java_call(wrapper, root_insets,
+			"getInsetsIgnoringVisibility", [gestures]))
+		# Hidden status-bar space is not a second camera inset. Bottom navigation
+		# and mandatory gestures remain reserved even while immersive bars hide.
+		gesture_edges.y = 0
+		if not visible_bars.is_finite() or not stable_edges.is_finite() or not gesture_edges.is_finite(): return {}
+		insets = _max_insets(_max_insets(visible_bars, stable_edges), gesture_edges)
+		var ime_edges := _java_insets(wrapper, _java_call(wrapper, root_insets, "getInsets", [ime]))
+		ime_known = ime_edges.is_finite()
+		if ime_known: ime_bottom = maxf(0, ime_edges.w)
 	else:
-		# API 24–29: stable insets exist from API 21 and exclude the IME.
 		var suffixes := ["Left", "Top", "Right", "Bottom"]
 		for i in range(4):
-			var number: Variant = _java_call(wrapper, root_insets, "getStableInset" + suffixes[i])
+			var method := "getSystemWindowInset" if i == 1 else "getStableInset"
+			var number: Variant = _java_call(wrapper, root_insets, method + suffixes[i])
 			if number is int: insets[i] = maxf(0, float(number))
+		var system_bottom: Variant = _java_call(wrapper, root_insets, "getSystemWindowInsetBottom")
+		if system_bottom is int and float(system_bottom) > insets.w:
+			ime_known = true
+			ime_bottom = float(system_bottom)
+		# A legacy zero/nav-only inset is ambiguous with adjustPan, so retain
+		# Godot's height fallback instead of asserting that the IME is hidden.
 		if sdk >= 28:
 			var cutout: Variant = _java_call(wrapper, root_insets, "getDisplayCutout")
 			for i in range(4):
 				var number: Variant = _java_call(wrapper, cutout, "getSafeInset" + suffixes[i])
 				if number is int: insets[i] = maxf(insets[i], float(number))
 		if sdk >= 29:
-			insets = _max_insets(insets, _java_insets(wrapper,
-				_java_call(wrapper, root_insets, "getMandatorySystemGestureInsets")))
+			var gestures := _java_insets(wrapper, _java_call(wrapper, root_insets, "getMandatorySystemGestureInsets"))
+			gestures.y = 0
+			if gestures.is_finite(): insets = _max_insets(insets, gestures)
 	if not insets.is_finite(): return {}
-	return {"bounds": Rect2(origin, Vector2(width, height)), "insets": insets, "restored": restored}
+	return {"bounds": native_bounds, "render_bounds": render_bounds, "insets": insets,
+		"ime_bottom": ime_bottom, "ime_known": ime_known, "restored": restored,
+		"client_origin": origin}
+
+
+static func _java_rect(wrapper: Object, value: Variant) -> Rect2:
+	# Rect and Insets share four public int field names. Do not clamp signed
+	# Rect origins: a render view can be translated/panned by the window manager.
+	var edges := _java_insets(wrapper, value)
+	if not edges.is_finite(): return Rect2()
+	return Rect2(edges.x, edges.y, edges.z - edges.x, edges.w - edges.y)
 
 
 static func _enable_cutout_drawing(wrapper: Object, window: Variant, sdk: int) -> bool:
@@ -218,21 +301,25 @@ static func safe_rect(control: Control) -> Rect2:
 	var safe := Rect2(DisplayServer.get_display_safe_area())
 	var id := control.get_window().get_window_id()
 	var client := Rect2(Vector2(DisplayServer.window_get_position(id)), Vector2(DisplayServer.window_get_size(id)))
+	var native_ime_known := false
 	if OS.has_feature("android"):
 		_request_android_sample(client.position)
 		if not _android_sample.is_empty() and Time.get_ticks_msec() - _android_sample_ms < 2000:
-			var native_bounds: Rect2 = _android_sample["bounds"]
-			# Ignore a pre-rotation or pre-resize sample until the UI thread catches up.
-			if is_equal_approx(native_bounds.size.x, client.size.x) and native_bounds.position.is_equal_approx(client.position):
-				safe = merge_safe_insets(client, safe, native_bounds, _android_sample["insets"])
+			var sample := _android_sample.duplicate()
+			native_ime_known = sample.get("ime_known", false)
+			if native_ime_known and float(sample.get("ime_bottom", 0)) <= 0:
+				_unoccluded_client = client
+			if not native_ime_known:
+				sample["ime_bottom"] = maxf(0, float(DisplayServer.virtual_keyboard_get_height()))
+			safe = android_safe_client(client, safe, sample)
+			# Native sample already clips IME in its own window coordinates.
+			return screen_to_local(bounds, control_to_client_transform(control), safe)
 	var keyboard_height := float(DisplayServer.virtual_keyboard_get_height())
 	if keyboard_height <= 0 or not _unoccluded_client.has_area() or not is_equal_approx(_unoccluded_client.size.x,client.size.x):
 		_unoccluded_client = client
 	if keyboard_height > 0:
 		safe = exclude_keyboard(safe if safe.has_area() else client, _unoccluded_client, keyboard_height)
-	# get_screen_transform includes viewport stretching and the window origin.
-	# Intersecting with our own bounds also handles a client already inset by OS.
-	return screen_to_local(bounds, control.get_screen_transform(), safe)
+	return screen_to_local(bounds, control_to_client_transform(control), safe)
 
 
 static func exclude_keyboard(safe_screen: Rect2, unoccluded_client_screen: Rect2,
@@ -256,12 +343,15 @@ static func inset_rect(rect: Rect2, horizontal: float, vertical: float) -> Rect2
 
 
 static func compute_main(viewport_bounds: Rect2, safe_bounds: Rect2,
-		status_height: float = 0.0) -> Dictionary:
+		status_height: float = 0.0, mobile: bool = false) -> Dictionary:
 	var safe := viewport_bounds.intersection(safe_bounds)
 	if not safe.has_area(): safe = viewport_bounds
 	var compact := safe.size.y < 640.0
 	var pad := 12.0 if compact else 24.0
 	var inner := inset_rect(safe, pad, pad)
+	if mobile:
+		inner.position.y = safe.position.y + minf(12.0, safe.size.y * 0.1)
+		inner.size.y = maxf(1.0, safe.end.y - minf(32.0, safe.size.y * 0.1) - inner.position.y)
 	var gap := 8.0 if compact else 12.0
 	var header_height := 48.0
 	var result_height := 104.0

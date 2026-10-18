@@ -1,41 +1,57 @@
-# Android fullscreen and safe controls (0.2.9)
+# Android fullscreen and safe controls (0.2.10)
 
-## Verified behavior and fix
+## Causes identified after Galaxy feedback
 
-The previous export used `screen/immersive_mode=false`. Godot 4.6 shows the status/navigation bars in that mode and, without edge-to-edge, pads its root view. This is a source-supported explanation for the reported bands, not a diagnosis from the user's device pixels.
+Fullscreen itself worked in 0.2.9, but three reported symptoms shared a coordinate error: an excessively low header, insufficient bottom-navigation clearance, and a modal that did not visibly react to the keyboard.
 
-The Android preset now enables `screen/immersive_mode` and `screen/edge_to_edge`. The existing background fills the complete viewport; only the interactive main layout and modal cards use `SafeLayout.safe_rect`. The native window background also matches the app's ivory color.
+Godot 4.6.3 forces embedded subwindows on Android. `CanvasItem.get_screen_transform()` uses the window's popup transform, which is identity when subwindows are embedded. The old helper therefore omitted viewport stretching and treated native pixels as logical UI units. An actual embedded-root host test reproduces this: the old transform has scale 1 while the correct viewport transform is 2.25. With that error a physical keyboard boundary can remain below the entire logical viewport, so intersection never shrinks the card. The earlier synthetic tests manually supplied the correct scale and did not exercise this runtime path.
 
-`SafeLayout.resume_fullscreen()` runs at startup and focus/resume. On the Android UI thread it reacquires the current Activity and calls Godot's `enableEdgeToEdge(true, true)` and `enableImmersiveMode(true, true)`. The public window cutout policy is `ALWAYS` on API 30+, `SHORT_EDGES` on API 28–29, and untouched on older APIs. This matters because Android's default cutout policy can letterbox immersive content on older OS versions. No cutout height is guessed.
+A second Android-only issue affected native sampling: Godot's JNI can expose a Java `jboolean` as an integer Variant. Comparing that directly with `true` is invalid in GDScript. `java_truth()` now normalizes integer, Boolean and null results explicitly.
 
-## Insets and keyboard
+Two additional weaknesses were removed: native samples were previously discarded whenever decor width differed from the render-buffer width, and keyboard avoidance depended solely on Godot's IME animation callback. A decor/buffer mismatch was not measured on the user's Galaxy; it is a corrected assumption rather than a claimed device observation.
 
-Godot's immersive `getDisplaySafeArea()` reports display cutouts only. A guarded AndroidRuntime/JavaClassWrapper bridge supplements it with measured stable system-bar and mandatory-gesture insets:
+## Fullscreen remains enabled
 
-- API 30+: `WindowInsets.getInsetsIgnoringVisibility(systemBars | displayCutout | mandatorySystemGestures)`.
-- API 24–29: stable inset getters; API 28 adds display-cutout safe inset getters; API 29 adds mandatory-system-gesture insets.
-- Stable bar space remains reserved while bars are hidden. Swipe-revealed transient bars therefore do not cover controls or cause a jump. Android retains its normal transient-bar swipe behavior.
-- IME is excluded from the native inset mask. Existing `virtual_keyboard_get_height()` handling clips against the pre-keyboard client rectangle, then intersects with the current viewport. A resized viewport never subtracts the IME twice; focused modal fields remain scrollable into view.
-- Native and engine rectangles are intersected, never added. The combined rectangle is transformed once with `Control.get_screen_transform().affine_inverse()`. Bounds remain in Godot's Android window coordinates; no extra DPI scaling is applied.
+Android exports retain `screen/immersive_mode=true` and `screen/edge_to_edge=true`. The background fills the complete viewport; only controls and modal cards use the safe rectangle. The native window background matches the app's ivory color.
 
-Activity, Window and View references are reacquired per sample on the UI thread and are not stored. Only value types return through a deferred callable. Sampling is limited to once per 500 ms, shared by all controls/cards. Resume invalidates old generations; null pre-attachment measurements are retried. Samples expire after two seconds and stale-width samples are ignored.
+At startup and focus/resume, `resume_fullscreen()` reacquires the Activity on its UI thread and calls Godot's edge-to-edge and immersive APIs. The public cutout policy remains `ALWAYS` on API 30+, `SHORT_EDGES` on API 28–29, and untouched on older APIs. Android's default cutout policy can otherwise letterbox immersive content on older versions. No device-specific resolution or guessed cutout size is used.
 
-All Android-only classes/singletons and Java methods are guarded dynamically. Java exceptions are checked immediately after Java calls; `get_exception()` is not a clearing operation. Godot clears the JNI exception internally and replaces its stored last exception on the next Java call. Public instance fields use public Java reflection because JavaObject does not expose instance fields as GDScript properties. No private APIs or access overrides are used.
+## Coordinate and inset pipeline
 
-If the bridge is absent or measurement fails, the existing Godot cutout/keyboard rectangle and ordinary layout padding remain usable. Missing bridge support logs one warning; this fallback cannot guarantee all transient-bar/gesture reservations. The current custom engine retains JavaClassWrapper, `get_exception` and `has_java_method`; the APK includes AndroidRuntimePlugin, so no custom native library rebuild was required.
+1. Read current native WindowInsets. API 30+ WindowMetrics provides full native window bounds. Read the actual Godot render View's drawing rectangle, then use `decor.offsetDescendantRectToMyCoords` to express it in native window coordinates. A Java Rect object is used because Godot copies primitive array arguments, so Java `int[]` output parameters would not update a GDScript array.
+2. Intersect native engine cutout and native control insets. The top reserves the actual cutout and visible bars, without an additional hidden-status-bar reservation. Bottom navigation and mandatory gesture space remain reserved while immersive bars hide.
+3. Clip the native keyboard boundary. API 30+ polls `getInsets(Type.ime())`, including zero on dismissal, instead of depending on an animation event. API 24–29 uses a system-bottom inset larger than stable navigation as positive keyboard evidence; ambiguous zero/nav-only readings retain the Godot height fallback.
+4. Map the native safe rectangle through the measured render View rectangle into Godot buffer pixels. Differing buffer and view dimensions are supported; already-resized or offset views are intersected, not inset twice.
+5. Convert buffer pixels to control-local units with `Viewport.get_final_transform() * Control.get_global_transform_with_canvas()`, plus the window origin. This retains stretch with embedded subwindows.
 
-## Validation and limits
+Main mobile controls add 12 logical pixels above the header and 32 below the bottom actions, inside the measured safe bounds. This is not a fixed percentage of the display. Desktop spacing is unchanged.
 
-Host geometry tests cover native/engine intersection, malformed/absent measurements, already-inset clients, transformed 2.25× screen coordinates, transient bars, keyboard resize/overlay, restoration, stale callback generations, main controls, full-bleed backgrounds and modal focus scrolling. Desktop/headless tests do not execute JNI or prove Samsung system-bar behavior.
+The existing modal layout then shrinks and recenters its card in the corrected visible area. Its scrolling container ensures the already-focused field is visible after container layout settles. Opening the editor still focuses the card rather than an input, so it does not summon the keyboard automatically.
 
-Physical Android checks still needed: launch with gesture and three-button navigation, swipe bars in/out, open and dismiss the keyboard, switch apps and return, check the camera area, and open each modal. No Galaxy device was available for this change.
+## Lifetime, compatibility and fallback
+
+Activity/Window/View references are reacquired on the Android UI thread and are not retained. Only value types return through a deferred callable. JNI sampling is shared and throttled to 200 ms; the scene checks cached geometry every 100 ms. Resume invalidates previous callback generations, samples expire after two seconds, and null pre-attachment measurements retry without collapsing the interface.
+
+Android classes, singletons and Java methods are dynamically guarded. Java exceptions are checked immediately after Java calls; `get_exception()` does not itself clear the stored result. Public fields use public reflection with no access override. The custom engine retains the required Java wrapper APIs and the APK includes AndroidRuntimePlugin; no native library rebuild was required.
+
+If the bridge is absent or a sample fails, Godot cutout/keyboard measurements remain available through the corrected embedded-root transform. The fallback cannot guarantee all native navigation/IME information. A missing bridge logs one warning.
+
+## Validation and remaining device check
+
+`test_android_insets.gd` adds 41 checks: actual embedded-root scaling, Java Boolean normalization, native/render size mismatch, render origin, native IME without an engine event, overlay/resized keyboard geometry, gesture/three-button navigation, mobile spacing, and actual focused editor-field visibility/restoration across three viewport sizes. The existing 137 mobile-layout checks also pass.
+
+These host tests exercise the actual Godot layout transform and modal code, but not Android JNI or Samsung's compositor. The user's Galaxy confirmed fullscreen in 0.2.9; the 0.2.10 layout/keyboard fixes still require their physical-device check. No physical Galaxy or working Android emulator was available for this change.
 
 ## Primary references
 
-- [Godot 4.6 Android fullscreen/edge-to-edge and IME implementation](https://github.com/godotengine/godot/blob/4.6/platform/android/java/lib/src/main/java/org/godotengine/godot/Godot.kt)
-- [Godot 4.6 native safe-area implementation](https://github.com/godotengine/godot/blob/4.6/platform/android/java/lib/src/main/java/org/godotengine/godot/GodotIO.java)
-- [Godot 4.6 Android export flags](https://github.com/godotengine/godot/blob/4.6/platform/android/export/export_plugin.cpp)
+- [Godot 4.6.3 Android embedded-subwindow initialization](https://github.com/godotengine/godot/blob/4.6.3-stable/main/main.cpp)
+- [Godot CanvasItem screen transform](https://github.com/godotengine/godot/blob/4.6.3-stable/scene/main/canvas_item.cpp)
+- [Godot Window popup/final transforms](https://github.com/godotengine/godot/blob/4.6.3-stable/scene/main/window.cpp)
+- [Godot JNI return conversion](https://github.com/godotengine/godot/blob/4.6.3-stable/platform/android/java_class_wrapper.cpp)
+- [Godot fullscreen and IME implementation](https://github.com/godotengine/godot/blob/4.6/platform/android/java/lib/src/main/java/org/godotengine/godot/Godot.kt)
+- [Godot native safe-area implementation](https://github.com/godotengine/godot/blob/4.6/platform/android/java/lib/src/main/java/org/godotengine/godot/GodotIO.java)
 - [Godot AndroidRuntime/JavaClassWrapper integration](https://docs.godotengine.org/en/4.6/tutorials/platform/android/javaclasswrapper_and_androidruntimeplugin.html)
-- [Godot JavaClassWrapper exception contract](https://docs.godotengine.org/en/4.6/classes/class_javaclasswrapper.html)
-- [Android WindowInsets API levels and semantics](https://developer.android.com/reference/android/view/WindowInsets)
-- [Android cutout modes and immersive letterboxing](https://developer.android.com/develop/ui/views/layout/display-cutout)
+- [Android WindowInsets API](https://developer.android.com/reference/android/view/WindowInsets)
+- [Android WindowMetrics](https://developer.android.com/reference/android/view/WindowMetrics)
+- [Android ViewGroup coordinate conversion](https://developer.android.com/reference/kotlin/android/view/ViewGroup)
+- [Android cutout modes](https://developer.android.com/develop/ui/views/layout/display-cutout)
