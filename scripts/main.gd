@@ -1,11 +1,13 @@
 extends Control
 
+const WheelPhysics = preload("res://scripts/wheel_physics.gd")
 const WheelAudio = preload("res://scripts/wheel_audio.gd")
 const WindowGeometry = preload("res://scripts/window_geometry.gd")
 const SafeLayout = preload("res://scripts/safe_layout.gd")
 const DurationInput = preload("res://scripts/duration_input.gd")
 const HistoryStats = preload("res://scripts/history_stats.gd")
 const Model = preload("res://scripts/wheel_model.gd")
+const PresetCard = preload("res://scripts/preset_card.gd")
 const Reorder = preload("res://scripts/reorder_handle.gd")
 const Layer = preload("res://scripts/wheel_layer.gd")
 const Select = preload("res://scripts/wheel_select.gd")
@@ -57,8 +59,20 @@ var result_panel: PanelContainer
 var bottom_controls: Control
 var action_controls: HBoxContainer
 var safe_bounds := Rect2()
+var spin_token := 0
+var committed_spin_token := -1
+var spin_preset: Dictionary = {}
+var spin_slices: Array = []
+var spin_remove_winner := false
+var spin_mode := "weighted"
+var physics_coasting := false
+var coast_elapsed := 0.0
+var application_focused := true
+var application_paused := false
+var skip_coast_frame := false
 
 func _ready() -> void:
+ set_process(false)
  WindowGeometry.apply_desktop_startup(get_window())
  get_tree().quit_on_go_back = false
  child_entered_tree.connect(_register_layer)
@@ -104,6 +118,13 @@ func _ready() -> void:
   get_tree().quit()
 
 func _notification(what: int) -> void:
+ if what == NOTIFICATION_APPLICATION_FOCUS_OUT: application_focused = false
+ if what == NOTIFICATION_APPLICATION_PAUSED: application_paused = true
+ if what == NOTIFICATION_APPLICATION_FOCUS_IN: application_focused = true; skip_coast_frame = true
+ if what == NOTIFICATION_APPLICATION_RESUMED: application_paused = false; skip_coast_frame = true
+ if what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_APPLICATION_FOCUS_IN, NOTIFICATION_APPLICATION_RESUMED]:
+  set_process(physics_coasting and application_focused and not application_paused)
+  if physics_coasting: OS.low_processor_usage_mode = application_paused or not application_focused
  if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
   _cancel_drag()
   if wheel_audio != null: wheel_audio.set_foreground(false)
@@ -410,7 +431,7 @@ func _refresh_wheel() -> void:
  elif wheel.slices.size() < 2: status.text = "항목이 1개 남았어요. 라운드를 복원해 주세요."
  else: status.text = ""
  status.visible = not status.text.is_empty()
- duration_label.text = "회전 %.1f초 · 당첨 항목 %s" % [_duration(), "제외" if _remove_winner() else "유지"]
+ duration_label.text = ("물리 회전 · 당첨 항목 %s" % ("제외" if _remove_winner() else "유지")) if _physics_enabled() else ("회전 %.1f초 · 당첨 항목 %s" % [_duration(), "제외" if _remove_winner() else "유지"])
 
 func _duration() -> float:
  return float(data.settings.duration if preset.duration_override == null else preset.duration_override)
@@ -418,19 +439,33 @@ func _duration() -> float:
 func _remove_winner() -> bool:
  return bool(data.settings.remove_winner if preset.remove_override == null else preset.remove_override)
 
-func _spin(direction: float = 1.0, release_velocity: float = 12.0) -> void:
+func _physics_enabled() -> bool:
+ return preset.get("physics_enabled", false) == true
+
+func _spin(direction: float = 0.0, release_velocity: float = 12.0) -> void:
  if _has_layer(): return
  if busy or not Model.validate_preset(preset).is_empty(): return
  var slices: Array = Model.active_slices(preset)
  if slices.size() < 2: return
+ # Physics never preselects a winner or a landing point.
+ if _physics_enabled():
+  var velocity := signf(direction) * clampf(absf(release_velocity), WheelPhysics.MIN_RELEASE_SPEED, WheelPhysics.MAX_SPEED)
+  if direction == 0.0:
+   velocity = rng.randf_range(12.0,24.0) * (-1.0 if rng.randf() < 0.5 else 1.0)
+  _begin_spin(slices)
+  spin_start = fposmod(wheel.rotation, TAU)
+  spin_initial_velocity = velocity
+  coast_elapsed = 0.0
+  physics_coasting = true
+  set_process(application_focused and not application_paused)
+  skip_coast_frame = false
+  return
+ # Existing weighted draw and duration trajectory remain unchanged in OFF mode.
  var choice: Dictionary = Model.choose(slices, rng.randf())
  if choice.index < 0: return
  var winner: Dictionary = slices[choice.index].duplicate(true)
  var landing := Model.landing_angle(choice, rng.randf())
- busy = true
- data.last_preset_id = preset.id
- _save(); _refresh_editor(); _refresh_wheel()
- OS.low_processor_usage_mode = false
+ _begin_spin(slices)
  spin_start = wheel.rotation
  spin_seconds = _duration()
  var sign_value := 1.0 if direction >= 0 else -1.0
@@ -440,23 +475,57 @@ func _spin(direction: float = 1.0, release_velocity: float = 12.0) -> void:
  spin_distance = sign_value * (alignment + TAU * turns)
  spin_initial_velocity = sign_value * speed
  var target := spin_start + spin_distance
- wheel_audio.begin(wheel.rotation, data.settings.sound)
+ var token := spin_token
  tween = create_tween()
  tween.tween_method(_animate_spin, 0.0, 1.0, spin_seconds)
- tween.finished.connect(func():
-  current_rotation = fposmod(target, TAU); wheel.rotation = current_rotation
-  preset.history.append({"slice_id": winner.id, "name": winner.name, "color": winner.color, "at": Time.get_datetime_string_from_system(false, true)})
-  # History deliberately has no automatic trimming: reset is the user's choice.
-  if _remove_winner(): preset.remaining_ids.erase(winner.id)
-  busy = false; OS.low_processor_usage_mode = true
-  wheel_audio.finish(data.settings.sound); _save(); _refresh_editor(); _refresh_result()
-  # Hold landed wheel until the next spin/reset. Keep status truthful to next round.
-  spin_button.disabled = Model.active_slices(preset).size() < 2
-  status.text = "라운드를 복원해 다시 시작하세요." if spin_button.disabled else ""
-  status.visible = not status.text.is_empty()
- )
- # Refresh working slices at the next spin, not before the result is visible.
- wheel.slices = slices; wheel.queue_redraw()
+ tween.finished.connect(func(): _finish_spin(token, winner, target))
+
+func _begin_spin(slices: Array) -> void:
+ spin_token += 1
+ spin_preset = preset
+ spin_slices = slices.duplicate(true)
+ spin_remove_winner = _remove_winner()
+ spin_mode = "physics" if _physics_enabled() else "weighted"
+ busy = true
+ data.last_preset_id = preset.id
+ _save(); _refresh_editor(); _refresh_wheel()
+ OS.low_processor_usage_mode = false
+ wheel.slices = spin_slices; wheel.queue_redraw()
+ wheel_audio.begin(wheel.rotation, data.settings.sound)
+
+func _process(delta: float) -> void:
+ if not physics_coasting or application_paused or not application_focused: return
+ if skip_coast_frame:
+  skip_coast_frame = false
+  return
+ if not is_finite(delta) or delta < 0.0: return
+ coast_elapsed += delta
+ var motion: Dictionary = WheelPhysics.sample(spin_start, spin_initial_velocity, coast_elapsed)
+ wheel.rotation = motion.angle
+ wheel_audio.advance(wheel.rotation, Time.get_ticks_usec() / 1000000.0, data.settings.sound)
+ if motion.finished:
+  # Read back the rendered Control angle after normalization, avoiding a
+  # double-precision winner that disagrees with its real_t display transform.
+  wheel.rotation = fposmod(motion.angle, TAU)
+  var winner_index := Model.index_at_rotation(spin_slices, wheel.rotation)
+  if winner_index >= 0:
+   _finish_spin(spin_token, spin_slices[winner_index], wheel.rotation)
+
+func _finish_spin(token: int, winner: Dictionary, target: float) -> void:
+ if token != spin_token or token == committed_spin_token or not busy: return
+ committed_spin_token = token
+ physics_coasting = false
+ set_process(false)
+ current_rotation = fposmod(target, TAU); wheel.rotation = current_rotation
+ spin_preset.history.append({"slice_id": winner.id, "name": winner.name, "color": winner.color, "at": Time.get_datetime_string_from_system(false, true), "spin_mode": spin_mode})
+ # A single commit owns history, round removal and persistence in both modes.
+ if spin_remove_winner: spin_preset.remaining_ids.erase(winner.id)
+ busy = false; OS.low_processor_usage_mode = true
+ wheel_audio.finish(data.settings.sound); _save(); _refresh_editor(); _refresh_result()
+ # Keep the landed slice snapshot until the next spin/reset.
+ spin_button.disabled = Model.active_slices(preset).size() < 2
+ status.text = "라운드를 복원해 다시 시작하세요." if spin_button.disabled else ""
+ status.visible = not status.text.is_empty()
 
 func _reset_round() -> void:
  if busy: return
@@ -503,7 +572,10 @@ func _preset_settings() -> void:
 func _editor_preset_settings(box: VBoxContainer) -> void:
  box.add_child(HSeparator.new())
  box.add_child(_label("이 룰렛 설정",22))
- box.add_child(_label("회전 시간",16))
+ var physics := CheckButton.new(); physics.name = "PhysicsRotation"; physics.text = "물리 회전"; physics.button_pressed = _physics_enabled(); physics.custom_minimum_size.y = 52; box.add_child(physics)
+ var physics_hint := _label("스와이프 힘으로 회전 · 멈춘 칸이 당첨" if _physics_enabled() else "설정한 비율로 추첨 · 정해진 시간만큼 회전",12); physics_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; box.add_child(physics_hint)
+ var probability_hint := _label("항목 비율은 칸의 너비이며, 당첨 확률을 보장하지 않아요.",12); probability_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; probability_hint.visible = _physics_enabled(); box.add_child(probability_hint)
+ var duration_title := _label("회전 시간",16); box.add_child(duration_title)
  var duration_group := ButtonGroup.new()
  var inherit := CheckBox.new(); inherit.text = "전체 설정 사용 · %s초" % _weight_text(float(data.settings.duration)); inherit.button_group = duration_group; inherit.button_pressed = preset.duration_override == null; box.add_child(inherit)
  var custom_row := _row(); box.add_child(custom_row)
@@ -516,7 +588,23 @@ func _editor_preset_settings(box: VBoxContainer) -> void:
  var seconds := DurationInput.new(); seconds.value = _duration(); seconds.editable = custom.button_pressed; seconds.custom_minimum_size.x = 120; custom_row.add_child(seconds)
  inherit.pressed.connect(func(): preset.duration_override = null; seconds.editable = false; seconds.set_value_no_signal(float(data.settings.duration)); _changed(); _refresh_wheel())
  custom.pressed.connect(func(): preset.duration_override = seconds.value; seconds.editable = true; _changed(); _refresh_wheel())
- seconds.value_changed.connect(func(v): if custom.button_pressed: preset.duration_override = v; _changed(); _refresh_wheel())
+ seconds.value_changed.connect(func(v): if custom.button_pressed and not _physics_enabled(): preset.duration_override = v; _changed(); _refresh_wheel())
+ var duration_hint := _label("물리 회전에서는 회전 시간을 사용하지 않아요.",12); duration_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; box.add_child(duration_hint)
+ var update_physics_controls := func():
+  var enabled := _physics_enabled()
+  inherit.disabled = enabled; custom.disabled = enabled
+  seconds.editable = not enabled and custom.button_pressed
+  duration_title.modulate.a = 0.45 if enabled else 1.0
+  custom_row.modulate.a = 0.45 if enabled else 1.0
+  inherit.modulate.a = 0.45 if enabled else 1.0
+  duration_hint.visible = enabled
+  probability_hint.visible = enabled
+  physics_hint.text = "스와이프 힘으로 회전 · 멈춘 칸이 당첨" if enabled else "설정한 비율로 추첨 · 정해진 시간만큼 회전"
+ physics.toggled.connect(func(enabled):
+  if not _physics_enabled(): seconds.apply()
+  preset.physics_enabled = enabled
+  update_physics_controls.call(); _changed(); _refresh_wheel())
+ update_physics_controls.call()
  box.add_child(_label("당첨 항목 처리",16))
  var remove_row := _row(); box.add_child(remove_row)
  var remove_group := ButtonGroup.new()
@@ -591,6 +679,8 @@ func _history_records(list: VBoxContainer, start: int, end: int) -> void:
   var swatch := StyleBoxFlat.new(); swatch.bg_color = HistoryStats.stored_color(h); swatch.set_corner_radius_all(6); dot.add_theme_stylebox_override("panel",swatch); row.add_child(dot)
   var detail := VBoxContainer.new(); detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL; detail.add_theme_constant_override("separation",5); row.add_child(detail)
   var winner_label := _label(str(h.name),18); winner_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; detail.add_child(winner_label)
+  if h.get("spin_mode", "") == "physics":
+   var badge := _label("물리",11); badge.name = "PhysicsHistoryBadge"; badge.add_theme_color_override("font_color",Color("066979")); badge.tooltip_text = "실제로 멈춘 칸으로 정한 물리 회전 결과"; detail.add_child(badge)
   if not str(h.get("at", "")).is_empty():
    var timestamp := _label(str(h.at),12); timestamp.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; timestamp.add_theme_color_override("font_color",Color("737d78")); detail.add_child(timestamp)
   if i > end + 1: list.add_child(HSeparator.new())
@@ -840,7 +930,7 @@ func _reorder_slices(from_index: int, to_index: int) -> void:
   current_rotation = 0; wheel.rotation = 0; _refresh_wheel(); _refresh_editor(); _save(); _restore_reorder_focus.call_deferred(editor,to_index)
 
 func _reorder_presets(from_index: int, to_index: int) -> void:
- if busy or from_index == to_index: return
+ if busy or from_index == to_index or (is_instance_valid(manager_dialog) and manager_dialog._closing): return
  if Model.move_entry(data.presets, from_index, to_index):
   _save(); _refresh_manager(); _refresh_picker()
   if is_instance_valid(manager_dialog): _restore_reorder_focus.call_deferred(manager_dialog.content,to_index)
@@ -863,11 +953,13 @@ func _refresh_manager() -> void:
  var add := _button("추가", _add_preset_dialog); _accent_button(add); add.disabled = data.presets.size() >= Model.MAX_PRESETS; top.add_child(add)
  for i in range(data.presets.size()):
   var p: Dictionary = data.presets[i]
-  var card := PanelContainer.new(); card.set_meta("row_index",i); list.add_child(card)
+  var card := PresetCard.new(); card.scroll = manager_dialog._scroll; card.set_meta("row_index",i); list.add_child(card)
+  card.accessibility_name = str(p.name) + " 선택"
+  card.activated.connect(func(): _manager_select(p.id))
   var style := StyleBoxFlat.new(); style.bg_color = Color("e7f5f7") if p.id == preset.id else Color("f7f8f5"); style.border_color = Color("82bec6") if p.id == preset.id else Color("d9ddd6"); style.set_border_width_all(1); style.set_corner_radius_all(16); style.set_content_margin_all(12); card.add_theme_stylebox_override("panel",style)
-  var row := _row(); row.add_theme_constant_override("separation",8); card.add_child(row)
+  var row := _row(); row.mouse_filter = Control.MOUSE_FILTER_PASS; row.add_theme_constant_override("separation",8); card.add_child(row)
   var handle := Reorder.new(); handle.caption = str(p.name); row.add_child(handle); handle.configure(list,card,i,manager_dialog._scroll); handle.reordered.connect(_reorder_presets)
-  var preview := Wheel.new(); preview.show_labels = false; preview.slices = p.slices; preview.custom_minimum_size = Vector2(72,90); row.add_child(preview)
+  var preview := Wheel.new(); preview.mouse_filter = Control.MOUSE_FILTER_IGNORE; preview.show_labels = false; preview.slices = p.slices; preview.custom_minimum_size = Vector2(72,90); row.add_child(preview)
   var details := VBoxContainer.new(); details.size_flags_horizontal = Control.SIZE_EXPAND_FILL; details.add_theme_constant_override("separation",12); row.add_child(details)
   var heading := _row(); details.add_child(heading)
   var name_label := _label(p.name,18); name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL; heading.add_child(name_label)
@@ -885,27 +977,32 @@ func _find_preset(id: String) -> Dictionary:
  return {}
 
 func _toggle_favorite(id: String) -> void:
- if busy: return
+ if busy or (is_instance_valid(manager_dialog) and manager_dialog._closing): return
  var p := _find_preset(id)
  if p.is_empty(): return
  p.favorite = not p.get("favorite",false)
  _save(); _refresh_manager()
 
 func _manager_select(id: String) -> void:
- if busy: return
+ if busy or (is_instance_valid(manager_dialog) and manager_dialog._closing): return
  var p := _find_preset(id)
  if p.is_empty(): return
- _select_preset(data.presets.find(p)); _refresh_manager()
+ _select_preset(data.presets.find(p))
+ _refresh_picker()
+ if is_instance_valid(manager_dialog): manager_dialog.dismiss(manager_dialog.queue_free)
 
 func _manager_edit(id: String) -> void:
- if busy: return
- _manager_select(id)
+ if busy or (is_instance_valid(manager_dialog) and manager_dialog._closing): return
+ var p := _find_preset(id)
+ if p.is_empty(): return
+ _select_preset(data.presets.find(p))
+ _refresh_picker()
  if is_instance_valid(manager_dialog):
   _switch_layer(manager_dialog, _open_editor)
  else: _open_editor()
 
 func _manager_delete(id: String) -> void:
- if busy or data.presets.size() <= 1: return
+ if busy or data.presets.size() <= 1 or (is_instance_valid(manager_dialog) and manager_dialog._closing): return
  var p := _find_preset(id)
  if p.is_empty(): return
  _confirm("프리셋 삭제", "‘%s’ 프리셋과 결과 기록을 삭제할까요?" % p.name,func():
@@ -914,7 +1011,7 @@ func _manager_delete(id: String) -> void:
   _save(); _refresh_picker(); _refresh_editor(); _refresh_result(); _refresh_wheel(); _refresh_manager())
 
 func _add_preset_dialog() -> void:
- if busy or data.presets.size() >= Model.MAX_PRESETS: return
+ if busy or data.presets.size() >= Model.MAX_PRESETS or (is_instance_valid(manager_dialog) and manager_dialog._closing): return
  var dialog := Layer.new(); dialog.title = "프리셋 추가"; dialog.ok_button_text = "추가"; dialog.set_confirmation(); add_child(dialog)
  var name := LineEdit.new(); name.placeholder_text = "새 프리셋 이름"; name.max_length = 40; name.custom_minimum_size.y = 46; dialog.add_content(name)
  dialog.get_ok_button().disabled = true

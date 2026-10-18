@@ -62,7 +62,7 @@ func run()->void:
  key(KEY_SPACE);await settle()
  check(not app.busy,"Space does not spin behind modal")
  click(Vector2(4,4));await settle()
- check(layer.visible and not app.busy,"backdrop consumes click without action")
+ check(not layer.visible and not app.busy,"backdrop tap closes overlay without background action")
  app._close_editor();await settle()
  app._new_preset();await settle()
  app._preset_manager();await settle()

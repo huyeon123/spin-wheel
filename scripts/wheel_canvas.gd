@@ -1,5 +1,7 @@
 extends Control
 
+const Model = preload("res://scripts/wheel_model.gd")
+
 var slices: Array = []
 var font: Font
 var show_labels := true
@@ -18,13 +20,13 @@ func _draw() -> void:
  if slices.is_empty():
   draw_circle(c, r, Color("dce1ee"))
   return
- var total := 0.0
- for s in slices: total += float(s.weight)
- if total <= 0: return
- var start := -PI / 2
+ var geometry := Model.slice_geometry(slices)
+ if geometry.is_empty(): return
  var separators: Array[float] = []
- for s in slices:
-  var sweep := TAU * float(s.weight) / total
+ for wedge: Dictionary in geometry:
+  var s: Dictionary = slices[wedge.index]
+  var start: float = -PI / 2 + wedge.start_angle
+  var sweep: float = wedge.sweep
   var points := PackedVector2Array([c])
   var segments := maxi(2, int(ceil(sweep * r / 6)))
   for i in range(segments + 1):
@@ -42,7 +44,6 @@ func _draw() -> void:
     label = label.left(label.length() - 2) + "…" if not label.ends_with("…") else label.left(label.length() - 2) + "…"
    var text_size := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
    draw_string(font, pos - Vector2(text_size.x / 2, -fs * .34), label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, _label_color(Color(s.color)))
-  start += sweep
  # Draw every boundary after every fill, so adjacent wedges cannot cover it.
  for boundary in separators:
   draw_line(c, c + Vector2.from_angle(boundary) * r, Color(1,1,1,0.65), 2, true)

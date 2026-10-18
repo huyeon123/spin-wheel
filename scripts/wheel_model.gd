@@ -7,7 +7,7 @@ const MAX_SLICES := 200
 const TAU_VALUE := PI * 2.0
 
 static func default_data() -> Dictionary:
-	return {"version": 1, "settings": {"duration": 6.0, "remove_winner": false, "sound": true}, "last_preset_id": "default", "presets": [{"id": "default", "name": "오늘의 작은 즐거움", "favorite": false, "mode": "ratio", "slices": [{"id": "default_1", "name": "커피 한 잔", "color": "#a89bea", "weight": 1.0}, {"id": "default_2", "name": "가벼운 산책", "color": "#ffcc75", "weight": 1.0}, {"id": "default_3", "name": "좋아하는 음악", "color": "#7ad3b9", "weight": 1.0}, {"id": "default_4", "name": "달콤한 간식", "color": "#f69ca9", "weight": 1.0}], "duration_override": null, "remove_override": null, "history": [], "remaining_ids": ["default_1", "default_2", "default_3", "default_4"]}]}
+	return {"version": 1, "settings": {"duration": 6.0, "remove_winner": false, "sound": true}, "last_preset_id": "default", "presets": [{"id": "default", "name": "오늘의 작은 즐거움", "favorite": false, "physics_enabled": false, "mode": "ratio", "slices": [{"id": "default_1", "name": "커피 한 잔", "color": "#a89bea", "weight": 1.0}, {"id": "default_2", "name": "가벼운 산책", "color": "#ffcc75", "weight": 1.0}, {"id": "default_3", "name": "좋아하는 음악", "color": "#7ad3b9", "weight": 1.0}, {"id": "default_4", "name": "달콤한 간식", "color": "#f69ca9", "weight": 1.0}], "duration_override": null, "remove_override": null, "history": [], "remaining_ids": ["default_1", "default_2", "default_3", "default_4"]}]}
 
 static func move_entry(entries: Array, from: int, to: int) -> bool:
 	# `to` is the final index; move references without cloning or sorting.
@@ -96,6 +96,34 @@ static func choose(slices: Array, unit_random: float) -> Dictionary:
 		accumulated += weight
 	return invalid
 
+static func slice_geometry(slices: Array) -> Array:
+	# One set of half-open boundaries for drawing and stopped-angle selection.
+	var total := 0.0
+	for slice: Variant in slices:
+		if not slice is Dictionary or not _number(slice.get("weight")) or float(slice.weight) <= 0.0:
+			return []
+		total += float(slice.weight)
+	if not is_finite(total) or total <= 0.0:
+		return []
+	var result: Array = []
+	var accumulated := 0.0
+	for i in range(slices.size()):
+		var start := accumulated / total * TAU_VALUE
+		accumulated += float(slices[i].weight)
+		var end := TAU_VALUE if i == slices.size() - 1 else accumulated / total * TAU_VALUE
+		result.append({"index": i, "start_angle": start, "end_angle": end, "sweep": end - start, "center_angle": (start + end) * 0.5})
+	return result
+
+static func index_at_rotation(slices: Array, rotation_angle: float) -> int:
+	if not is_finite(rotation_angle):
+		return -1
+	var geometry := slice_geometry(slices)
+	var pointer_angle := fposmod(-rotation_angle, TAU_VALUE)
+	for wedge: Dictionary in geometry:
+		if pointer_angle < wedge.end_angle:
+			return wedge.index
+	return -1
+
 static func _storage_valid(preset: Dictionary) -> bool:
 	# Drafts may have blank labels, fewer than two slices or unfinished totals.
 	if not preset.get("name") is String or not preset.get("mode") in ["ratio", "percent"]:
@@ -139,7 +167,7 @@ static func _sanitize(raw: Variant) -> Dictionary:
 		if not _storage_valid(value):
 			return {}
 		preset_ids[value.id] = true
-		var preset := {"id": value.id, "name": value.name, "favorite": value.get("favorite", false) if value.get("favorite", false) is bool else false, "mode": value.mode, "slices": [], "duration_override": value.get("duration_override", null), "remove_override": value.get("remove_override", null), "history": [], "remaining_ids": []}
+		var preset := {"id": value.id, "name": value.name, "favorite": value.get("favorite", false) if value.get("favorite", false) is bool else false, "physics_enabled": value.get("physics_enabled", false) if value.get("physics_enabled", false) is bool else false, "mode": value.mode, "slices": [], "duration_override": value.get("duration_override", null), "remove_override": value.get("remove_override", null), "history": [], "remaining_ids": []}
 		var slice_ids: Array = []
 		for slice: Dictionary in value.slices:
 			preset.slices.append({"id": slice.id, "name": slice.name, "color": slice.color, "weight": float(slice.weight)})

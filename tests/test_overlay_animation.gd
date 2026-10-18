@@ -29,7 +29,13 @@ func run()->void:
  check(count[0]==0,"close callback not delivered before exit")
  await settle();check(not editor.visible and count[0]==1,"reentrant close delivers once")
  check(root.gui_get_focus_owner()==app.main_selector,"close restores opener after exit")
- app._open_editor();await create_timer(.03).timeout;editor.dismiss(func():count[0]+=10);await create_timer(.03).timeout;editor.popup_centered()
+ app._open_editor();await create_timer(.03).timeout
+ editor.dismiss(func():count[0]+=10)
+ # Reentrancy needs a guaranteed unfinished exit. Wall-clock timers can resume
+ # after a host scheduling stall; real elapsed-time fades are tested above.
+ editor._transition.pause();editor._transition.custom_step(Layer.EXIT_SECONDS*0.5)
+ check(editor.visible and editor._closing and count[0]==1,"controlled midpoint is an unfinished exit")
+ editor.popup_centered()
  await settle();check(editor.visible and count[0]==1 and not editor._closing,"reopen cancels stale exit callback")
  check(app._top_layer()==editor,"reopened editor owns top stack")
  app._message("Nested","Dialog");await settle();var nested=app._top_layer()
@@ -44,7 +50,8 @@ func run()->void:
  var settings=app._top_layer();check(settings!=editor and settings.is_ancestor_of(root.gui_get_focus_owner()),"old close cannot steal focus from newer settings")
  app._close_top_layer();await settle()
  var drop=Layer.new();drop.is_dropdown=true;drop.dropdown_anchor=Rect2(20,20,200,40);app.add_child(drop);drop.add_content(Label.new());drop.popup_centered();await settle()
- var outside=InputEventScreenTouch.new();outside.index=0;outside.position=Vector2(450,750);outside.pressed=true;root.push_input(outside,true);await settle()
+ var outside=InputEventScreenTouch.new();outside.index=0;outside.position=Vector2(450,750);outside.pressed=true;root.push_input(outside,true)
+ outside=InputEventScreenTouch.new();outside.index=0;outside.position=Vector2(450,750);outside.pressed=false;root.push_input(outside,true);await settle()
  check(not drop.visible,"touch outside dropdown uses animated close")
  drop.queue_free();await settle()
  var selector=load("res://scripts/wheel_select.gd").new();app.add_child(selector);selector.add_item("One");selector.add_item("Two");selector.size=Vector2(200,48)

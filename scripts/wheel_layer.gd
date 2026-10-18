@@ -1,5 +1,11 @@
 extends Control
 ## Viewport-sized in-app modal. Content and nested layers are deliberately separate.
+# Last child sees raw input before descendant controls can consume touch-up.
+class TouchObserver extends Node:
+ var layer: Control
+ func _input(event: InputEvent) -> void:
+  if event is InputEventScreenTouch and is_instance_valid(layer): layer._observe_layer_touch(event)
+
 const SafeLayout = preload("res://scripts/safe_layout.gd")
 signal confirmed
 signal canceled
@@ -63,6 +69,12 @@ var _motion_offset := 0.0:
  set(value):
   _motion_offset = value
   if is_instance_valid(card): card.position = _rest_position + Vector2(0, value)
+var _touch_event_blocked := false
+var _active_touches := {}
+var _multi_touch := false
+var _outside_pointer := -2
+var _outside_origin := Vector2.ZERO
+var _outside_moved := false
 var _exit_blocker: Control
 
 func _init() -> void:
@@ -108,9 +120,6 @@ func _build() -> void:
  _built = true
  var dim := ColorRect.new()
  dim.color = Color(0,0,0,0) if is_dropdown else Color(0.10, 0.12, 0.10, 0.38)
- if is_dropdown:
-  dim.gui_input.connect(func(event):
-   if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT: request_close.call_deferred())
  dim.mouse_filter = Control.MOUSE_FILTER_STOP
  add_child(dim)
  dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -199,6 +208,9 @@ func _build() -> void:
  add_child(_exit_blocker)
  _exit_blocker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
  _exit_blocker.hide()
+ var touch_observer := TouchObserver.new()
+ touch_observer.layer = self
+ add_child(touch_observer)
 
 func add_content(node: Control) -> void:
  _build()
@@ -218,9 +230,14 @@ func set_confirmation(enabled: bool = true) -> void:
 func popup_centered(target: Vector2i = Vector2i.ZERO) -> void:
  _build()
  if not is_inside_tree(): return
+ get_tree().call_group("preset_tap_cards","_cancel")
  var was_visible := visible
  _stop_transition()
  _closing = false
+ _outside_pointer = -2
+ _active_touches.clear()
+ _multi_touch = false
+ _touch_event_blocked = false
  _exit_blocker.hide()
  if not visible:
   var owner := get_viewport().gui_get_focus_owner()
@@ -229,6 +246,10 @@ func popup_centered(target: Vector2i = Vector2i.ZERO) -> void:
  _open_layers.append(self)
  for i in range(_open_layers.size()):
   if is_instance_valid(_open_layers[i]):
+   _open_layers[i]._outside_pointer = -2
+   _open_layers[i]._active_touches.clear()
+   _open_layers[i]._multi_touch = false
+   _open_layers[i]._touch_event_blocked = false
    _open_layers[i].z_as_relative = false
    _open_layers[i].z_index = 100 + (i + 1) * 2
  _preferred = target
@@ -395,10 +416,8 @@ func _input(event: InputEvent) -> void:
  if _closing:
   get_viewport().set_input_as_handled()
   return
- if is_dropdown and event is InputEventScreenTouch and event.pressed and not card.get_global_rect().has_point(event.position):
-  get_viewport().set_input_as_handled()
-  request_close.call_deferred()
-  return
+ if _track_layer_touches(event): return
+ if _outside_tap(event): return
  if event is InputEventKey and event.pressed and event.keycode == KEY_TAB:
   var choices: Array[Control] = []
   _collect_focus(card, choices)
@@ -413,3 +432,59 @@ func _disable_native_menus(node: Node) -> void:
  if not is_instance_valid(node): return
  if node is LineEdit: node.context_menu_enabled = false
  for child in node.get_children(true): _disable_native_menus(child)
+
+func _outside_tap(event: InputEvent) -> bool:
+ var pointer := -2
+ var point := Vector2.ZERO
+ var pressed := false
+ var released := false
+ var canceled_touch := false
+ if event is InputEventScreenTouch:
+  pointer = event.index; point = event.position; pressed = event.pressed; released = not event.pressed; canceled_touch = event.canceled
+ elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+  pointer = -1; point = event.position; pressed = event.pressed; released = not event.pressed
+ elif event is InputEventScreenDrag:
+  pointer = event.index; point = event.position
+ elif event is InputEventMouseMotion:
+  pointer = -1; point = event.position
+ else: return false
+ if pressed and _outside_pointer == -2 and not card.get_global_rect().has_point(point):
+  _outside_pointer = pointer; _outside_origin = point; _outside_moved = false
+ if pointer != _outside_pointer: return false
+ if point.distance_to(_outside_origin) > 8.0: _outside_moved = true
+ get_viewport().set_input_as_handled()
+ if released:
+  var should_close := not canceled_touch and not _outside_moved and not card.get_global_rect().has_point(point)
+  _outside_pointer = -2
+  if should_close: request_close.call_deferred()
+ return true
+
+func _observe_layer_touch(event: InputEventScreenTouch) -> void:
+ if not is_inside_tree() or not visible or not _is_topmost(): return
+ if event.pressed:
+  _active_touches[event.index] = true
+  if _active_touches.size() > 1:
+   _multi_touch = true
+   _outside_pointer = -2
+   _cancel_pointer_gestures(content)
+ else: _active_touches.erase(event.index)
+ # Preserve suppression for the final release, but unblock the next fresh gesture.
+ _touch_event_blocked = _multi_touch
+ if _active_touches.is_empty(): _multi_touch = false
+
+func _track_layer_touches(event: InputEvent) -> bool:
+ if not (_touch_event_blocked if event is InputEventScreenTouch else _multi_touch): return false
+ get_viewport().set_input_as_handled()
+ return true
+
+func _cancel_pointer_gestures(node: Node) -> void:
+ # Card taps and reorder handles both expose this gesture-only cancellation hook.
+ if node.has_method("_cancel") and node.has_method("_input"): node.call("_cancel")
+ for child in node.get_children(): _cancel_pointer_gestures(child)
+
+func _notification(what: int) -> void:
+ if what in [NOTIFICATION_APPLICATION_FOCUS_OUT,NOTIFICATION_APPLICATION_PAUSED]:
+  _outside_pointer = -2
+  _active_touches.clear()
+  _multi_touch = false
+  _touch_event_blocked = false

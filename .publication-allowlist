@@ -64,6 +64,8 @@ scripts/main.gd
 scripts/main.gd.uid
 scripts/package_custom_android.py
 scripts/package_windows.sh
+scripts/preset_card.gd
+scripts/preset_card.gd.uid
 scripts/reorder_handle.gd
 scripts/reorder_handle.gd.uid
 scripts/safe_layout.gd
@@ -78,6 +80,8 @@ scripts/wheel_layer.gd
 scripts/wheel_layer.gd.uid
 scripts/wheel_model.gd
 scripts/wheel_model.gd.uid
+scripts/wheel_physics.gd
+scripts/wheel_physics.gd.uid
 scripts/wheel_select.gd
 scripts/wheel_select.gd.uid
 scripts/wheel_shadow.gd
@@ -91,10 +95,13 @@ tests/capture_hover.gd.uid
 tests/capture_layers.gd
 tests/capture_layers.gd.uid
 tests/test_android_insets.gd
+tests/test_android_insets.gd.uid
 tests/test_audio.gd
 tests/test_audio.gd.uid
 tests/test_button_states.gd
 tests/test_button_states.gd.uid
+tests/test_card_dismiss.gd
+tests/test_card_dismiss.gd.uid
 tests/test_close_icons.gd
 tests/test_close_icons.gd.uid
 tests/test_drag_continuity.gd
@@ -133,6 +140,10 @@ tests/test_overlay_animation.gd
 tests/test_overlay_animation.gd.uid
 tests/test_overlays.gd
 tests/test_overlays.gd.uid
+tests/test_physics_independent.gd
+tests/test_physics_independent.gd.uid
+tests/test_physics_rotation.gd
+tests/test_physics_rotation.gd.uid
 tests/test_random_landing.gd
 tests/test_random_landing.gd.uid
 tests/test_reorder_handle.gd
