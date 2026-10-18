@@ -31,6 +31,7 @@ func run()->void:
   if b.tooltip_text=="설정":gear=b
  gear.pressed.emit();await settle()
  check(app._top_layer().title=="전체 설정","gear directly opens global settings")
+ check(not app._top_layer().show_footer and not app._top_layer()._ok.is_visible_in_tree(),"global settings has top close only")
  check(button(app._top_layer(),"현재 룰렛 설정")==null,"no intermediate settings chooser")
  var global=app._top_layer();all(global,"SpinBox")[0].value=9.5;await settle()
  app._close_top_layer();await settle()

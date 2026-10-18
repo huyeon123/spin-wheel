@@ -106,3 +106,11 @@ Final detail regression total: **10,252 checks passed** (10,165 model,22 UI,4 la
 - Removed ghost pinning to insertion markers. Independent actual editor/manager1px-pointer traces now show exactly1px ghost motion (previous maximum jumps57/64px), with no per-motion data mutation/rebuild. Grab offset remains fixed; marker draws behind the opaque ghost. Autoscroll does not move a stationary-pointer ghost.
 - Fifteen suites: **11,850 checks passed**, no engine/script errors. Final cosmetic changes passed83 additional checks in the four affected suites. Desktop/mobile global settings, editor top/bottom and history captures are Linux-rendered app views; history screenshots use isolated sample records, not user data.
 - Version0.2.1/Android versionCode7; package ID and local persistence paths unchanged. Windows user-PC launch and Android physical-device behavior are not claimed by cloud rendering.
+
+## Version 0.2.2 selected-hover regression
+
+- Reproduced using real pointer dispatch and framebuffer capture: selected CheckBox hover uses DRAW_HOVER_PRESSED, whose missing theme entries fell back to a white font and StyleBoxEmpty. Explicit hover_pressed styles/colors now cover ratio/percentage radios, inherited/custom duration, removal toggles and generic buttons. Selected soft-label contrast is strengthened without changing layout.
+- Seventeen suites pass **12,143 checks**:15 headless suites11,852 plus288 native-rendered button-state checks and3 wheel-pixel checks. The button matrix covers9 roles across6 states and both selected/unselected values; actual text pixels and foreground/background contrast are checked. CI runs these two render-dependent suites under Xvfb/Mesa, never headless.
+- Global settings/history bottom Close footers removed; topX, Escape/Android back and focus restoration remain. Final desktop/mobile captures checked.
+- Wheel separators now render after all slice fills. Native pixel regression fails the old interleaved draw order and passes uniform current seams at rest/rotation. Shadow drawing and offset remain unchanged.
+- Version0.2.2/Android code8; no persistence schema or user-data migration changes. Physical Windows handoff and Android device verification remain separate from cloud rendering.

@@ -31,6 +31,7 @@ func run()->void:
  original.history[204].erase("at")
  app._save();app._history();await settle()
  check(app.history_dialog.title=="결과 기록" and original.name in texts(app.history_dialog),"history title and preset subtitle")
+ check(not app.history_dialog.show_footer and not app.history_dialog._ok.is_visible_in_tree(),"history has top close only")
  var labels=texts(app.history_dialog)
  check(labels.has("가".repeat(100)) and labels.has("winner_105") and not labels.has("winner_104"),"first page contains latest100 exact saved winner names")
  check(labels.has("saved timestamp 203") and not labels.has("saved timestamp 204"),"saved timestamps displayed without fabricating missing one")

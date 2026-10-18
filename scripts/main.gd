@@ -113,8 +113,9 @@ func _theme() -> void:
   t.set_color("font_hover_color", cls, Color("46594b"))
   t.set_color("font_focus_color", cls, Color("29302c"))
   t.set_color("font_pressed_color", cls, Color("29302c"))
-  t.set_color("font_disabled_color", cls, Color("939990"))
- for state in ["normal", "hover", "pressed", "focus", "disabled"]:
+  t.set_color("font_hover_pressed_color", cls, Color("29302c"))
+  t.set_color("font_disabled_color", cls, Color("737c74"))
+ for state in ["normal", "hover", "pressed", "hover_pressed", "focus", "disabled"]:
   var s := StyleBoxFlat.new()
   s.bg_color = Color("f6f6f4") if state == "normal" else Color("e9ebe8")
   if state == "disabled": s.bg_color = Color("eceeea")
@@ -126,6 +127,8 @@ func _theme() -> void:
   t.set_stylebox(state, "Button", s)
   t.set_stylebox(state, "OptionButton", s)
   t.set_stylebox(state, "LineEdit", s)
+  t.set_stylebox(state, "CheckBox", s)
+  t.set_stylebox(state, "CheckButton", s)
  t.set_stylebox("read_only", "LineEdit", t.get_stylebox("disabled","LineEdit"))
  t.set_color("font_uneditable_color","LineEdit",Color("747d76"))
  var divider := StyleBoxLine.new(); divider.color = Color("e3e7e2"); divider.thickness = 1; t.set_stylebox("separator","HSeparator",divider)
@@ -435,7 +438,7 @@ func _delete_preset() -> void:
 
 func _settings() -> void:
  if busy: return
- var dialog := Layer.new(); dialog.theme = theme; dialog.title = "전체 설정"; dialog.ok_button_text = "닫기"; dialog.min_size = Vector2i(500,450); add_child(dialog)
+ var dialog := Layer.new(); dialog.theme = theme; dialog.title = "전체 설정"; dialog.show_footer = false; dialog.ok_button_text = "닫기"; dialog.min_size = Vector2i(500,370); add_child(dialog)
  var box := VBoxContainer.new(); box.add_theme_constant_override("separation",12); dialog.add_content(box)
  box.add_child(_label("변경 내용은 자동 저장됩니다.",12))
  box.add_child(_label("회전 시간 · 1–30초"))
@@ -480,14 +483,14 @@ func _editor_preset_settings(box: VBoxContainer) -> void:
   option.pressed.connect(func():
    preset.remove_override = null if i == 0 else i == 2; _changed(); _refresh_wheel()
    for item in remove_row.get_children():
-    for state in ["normal","hover","pressed","focus"]: item.remove_theme_stylebox_override(state)
-    for color_key in ["font_color","font_hover_color","font_pressed_color","font_focus_color"]: item.remove_theme_color_override(color_key)
+    for state in ["normal","hover","pressed","hover_pressed","focus","disabled"]: item.remove_theme_stylebox_override(state)
+    for color_key in ["font_color","font_hover_color","font_pressed_color","font_hover_pressed_color","font_focus_color","font_disabled_color"]: item.remove_theme_color_override(color_key)
     if item.button_pressed: _accent_button(item,true))
  var hint := _label("전체 설정을 따르는 항목만 기본값과 함께 바뀝니다.",12); hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; box.add_child(hint)
 
 func _history(page: int = 0) -> void:
  if busy: return
- history_dialog = Layer.new(); history_dialog.theme = theme; history_dialog.exclusive = true; history_dialog.title = "결과 기록"; history_dialog.min_size = Vector2i(500,450); add_child(history_dialog)
+ history_dialog = Layer.new(); history_dialog.theme = theme; history_dialog.exclusive = true; history_dialog.title = "결과 기록"; history_dialog.show_footer = false; history_dialog.min_size = Vector2i(500,370); add_child(history_dialog)
  var box := VBoxContainer.new(); box.add_theme_constant_override("separation",18); history_dialog.add_content(box)
  var subtitle := _label(preset.name,16); subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; subtitle.add_theme_color_override("font_color",Color("737d78")); box.add_child(subtitle)
  var list := VBoxContainer.new(); list.add_theme_constant_override("separation",14); list.size_flags_horizontal = Control.SIZE_EXPAND_FILL; box.add_child(list)
@@ -689,22 +692,24 @@ func _accent_button(button: Button, soft := false) -> void:
  normal.border_color = Color("82bec6"); normal.set_border_width_all(1 if soft else 0)
  button.add_theme_stylebox_override("normal",normal)
  var hover := normal.duplicate() as StyleBoxFlat; hover.bg_color = Color("d9eef1") if soft else Color("066979")
- button.add_theme_stylebox_override("hover",hover); button.add_theme_stylebox_override("pressed",hover)
+ button.add_theme_stylebox_override("hover",hover); button.add_theme_stylebox_override("pressed",hover); button.add_theme_stylebox_override("hover_pressed",hover)
+ var disabled_style := normal.duplicate() as StyleBoxFlat; disabled_style.bg_color = Color("e6eeeb"); button.add_theme_stylebox_override("disabled",disabled_style)
  var focus := StyleBoxFlat.new(); focus.bg_color = Color(0,0,0,0); focus.border_color = Color("82bec6"); focus.set_border_width_all(2); focus.set_corner_radius_all(12); button.add_theme_stylebox_override("focus",focus)
- for key in ["font_color","font_hover_color","font_pressed_color","font_focus_color"]: button.add_theme_color_override(key,Color("087c8c") if soft else Color.WHITE)
+ for key in ["font_color","font_hover_color","font_pressed_color","font_hover_pressed_color","font_focus_color","font_disabled_color"]: button.add_theme_color_override(key,Color("066979") if soft else Color.WHITE)
+ button.add_theme_color_override("font_disabled_color",Color("526d68"))
 
 func _clear_accent(button: Button) -> void:
- for state in ["normal","hover","pressed","focus"]: button.remove_theme_stylebox_override(state)
- for key in ["font_color","font_hover_color","font_pressed_color","font_focus_color"]: button.remove_theme_color_override(key)
+ for state in ["normal","hover","pressed","hover_pressed","focus","disabled"]: button.remove_theme_stylebox_override(state)
+ for key in ["font_color","font_hover_color","font_pressed_color","font_hover_pressed_color","font_focus_color","font_disabled_color"]: button.remove_theme_color_override(key)
 
 func _danger_button(button: Button) -> void:
  var style := StyleBoxFlat.new(); style.bg_color = Color("fff1f3"); style.border_color = Color("e7a5ae"); style.set_border_width_all(1); style.set_corner_radius_all(12); style.set_content_margin_all(8)
- for state in ["normal","hover","pressed","disabled"]:
+ for state in ["normal","hover","pressed","hover_pressed","disabled"]:
   var variant := style.duplicate() as StyleBoxFlat
-  if state in ["hover","pressed"]: variant.bg_color = Color("ffe3e7")
+  if state in ["hover","pressed","hover_pressed"]: variant.bg_color = Color("ffe3e7")
   button.add_theme_stylebox_override(state,variant)
  var focus := style.duplicate() as StyleBoxFlat; focus.bg_color = Color.TRANSPARENT; focus.set_border_width_all(2); button.add_theme_stylebox_override("focus",focus)
- for key in ["font_color","font_hover_color","font_pressed_color","font_focus_color"]: button.add_theme_color_override(key,Color("b83243"))
+ for key in ["font_color","font_hover_color","font_pressed_color","font_hover_pressed_color","font_focus_color","font_disabled_color"]: button.add_theme_color_override(key,Color("b83243"))
 
 func _reorder_slices(from_index: int, to_index: int) -> void:
  if busy or from_index == to_index: return

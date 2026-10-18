@@ -21,6 +21,7 @@ func _draw() -> void:
  for s in slices: total += float(s.weight)
  if total <= 0: return
  var start := -PI / 2
+ var separators: Array[float] = []
  for s in slices:
   var sweep := TAU * float(s.weight) / total
   var points := PackedVector2Array([c])
@@ -28,7 +29,7 @@ func _draw() -> void:
   for i in range(segments + 1):
    points.append(c + Vector2.from_angle(start + sweep * i / segments) * r)
   draw_colored_polygon(points, Color(s.color))
-  draw_line(c, c + Vector2.from_angle(start) * r, Color(1,1,1,0.65), 2, true)
+  separators.append(start)
   var angle := start + sweep / 2
   var label: String = s.name
   if label.length() > 10: label = label.left(9) + "…"
@@ -38,6 +39,9 @@ func _draw() -> void:
    var text_size := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
    draw_string(font, pos - Vector2(text_size.x / 2, -fs * .34), label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, _label_color(Color(s.color)))
   start += sweep
+ # Draw every boundary after every fill, so adjacent wedges cannot cover it.
+ for boundary in separators:
+  draw_line(c, c + Vector2.from_angle(boundary) * r, Color(1,1,1,0.65), 2, true)
  draw_arc(c, r, 0, TAU, 256, Color.WHITE, 1.5, true)
  draw_circle(c, r * .15 + 4, Color(0.09,0.13,0.26,.10), true, -1, true)
  draw_circle(c, r * .15, Color.WHITE, true, -1, true)
