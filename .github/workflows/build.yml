@@ -44,6 +44,8 @@ jobs:
           echo "$ANDROID_HOME/build-tools/35.0.1" >> "$GITHUB_PATH"
       - name: Import resources
         run: '"$GODOT" --headless --path . --editor --import'
+      - name: Verify original audio assets
+        run: python3 scripts/generate_audio.py --check
       - name: Run tests
         run: '"$GODOT" --headless --path . --script tests/test_model.gd'
       - name: Run UI smoke tests
@@ -64,7 +66,7 @@ jobs:
         run: XDG_DATA_HOME="$(mktemp -d)" "$GODOT" --headless --path . --script tests/test_fixed_layers.gd
       - name: Test manager and reordering
         run: |
-          for suite in test_manager test_reorder_handle test_reorder_integration test_drag_continuity test_history test_editor_bounds test_window_geometry test_narrow_layers test_duration_input test_new_preset test_mobile_layout test_editor_focus; do
+          for suite in test_manager test_reorder_handle test_reorder_integration test_drag_continuity test_history test_editor_bounds test_window_geometry test_narrow_layers test_duration_input test_new_preset test_mobile_layout test_editor_focus test_audio test_random_landing; do
             XDG_DATA_HOME="$(mktemp -d)" "$GODOT" --headless --path . --script "tests/$suite.gd"
           done
       - name: Test rendered button state contrast

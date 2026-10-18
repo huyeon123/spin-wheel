@@ -214,3 +214,11 @@ static func save_data(data: Dictionary, path: String = "user://state.json") -> E
 		if backup_error != OK:
 			return backup_error
 	return DirAccess.rename_absolute(temp, path)
+
+static func landing_angle(choice: Dictionary, unit_random: float) -> float:
+	# Independent uniform point within the chosen interval. Only a sub-pixel
+	# numerical boundary margin is excluded; probability selection is unchanged.
+	var start := float(choice.start_angle)
+	var sweep := float(choice.sweep)
+	var epsilon := minf(sweep * 0.25, maxf(minf(1.0e-10, sweep * 1.0e-6), maxf(1.0, absf(start)) * 1.7763568394002505e-15))
+	return start + clampf(unit_random, 0.0, 1.0) * (sweep - 2.0 * epsilon) + epsilon

@@ -1,0 +1,24 @@
+Spin Wheel original synthesized sound effects
+Copyright (c) 2026 Spin Wheel contributors
+
+Files: spin.wav, victory.wav
+Generator: ../scripts/generate_audio.py
+License: MIT, under the project's ../LICENSE.
+
+These effects were generated directly from mathematical oscillators, amplitude
+envelopes, and deterministic pseudorandom noise. They contain no recordings,
+third-party samples, licensed songs, or external sound-font material.
+
+spin.wav is a dry 32 ms individual wooden/mechanical ratchet tick. Schedule one
+tick as the wheel crosses each angular step; it is not a looping spin track.
+victory.wav is an original 1.24 s C-major arpeggio and resolving chord.
+Both files are mono, 22,050 Hz, signed 16-bit PCM. Peak amplitude is limited to
+0.33 for the tick and 0.45 for the fanfare, preserving playback headroom.
+
+Rebuild assets and the separate listening preview from the project directory:
+    python3 scripts/generate_audio.py
+Verify reproducible PCM, format, headroom, DC, and silent endpoints:
+    python3 scripts/generate_audio.py --check
+
+The generated listening preview and numerical measurements are written to
+build/audio-preview; they are not runtime assets and are excluded from export.

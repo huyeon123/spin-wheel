@@ -1,5 +1,6 @@
 extends Control
 
+const WheelAudio = preload("res://scripts/wheel_audio.gd")
 const WindowGeometry = preload("res://scripts/window_geometry.gd")
 const SafeLayout = preload("res://scripts/safe_layout.gd")
 const DurationInput = preload("res://scripts/duration_input.gd")
@@ -24,7 +25,7 @@ var spin_button: Button
 var duration_label: Label
 var preset_name: Label
 var content_scroll: Control
-var audio: AudioStreamPlayer
+var wheel_audio: Node
 var font := preload("res://assets/NotoSansKR.otf")
 var current_rotation := 0.0
 var tween: Tween
@@ -69,8 +70,7 @@ func _ready() -> void:
  for p in data.presets:
   if p.id == data.last_preset_id: preset = p
  _theme()
- audio = AudioStreamPlayer.new()
- add_child(audio)
+ wheel_audio = WheelAudio.new(); add_child(wheel_audio)
  save_timer = Timer.new()
  save_timer.one_shot = true
  save_timer.wait_time = .35
@@ -104,6 +104,9 @@ func _ready() -> void:
 func _notification(what: int) -> void:
  if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
   _cancel_drag()
+  if wheel_audio != null: wheel_audio.set_foreground(false)
+ if what == NOTIFICATION_APPLICATION_FOCUS_IN or what == NOTIFICATION_APPLICATION_RESUMED:
+  if wheel_audio != null: wheel_audio.set_foreground(true)
  if what == NOTIFICATION_WM_GO_BACK_REQUEST:
   if not _close_top_layer():
    _save()
@@ -418,6 +421,7 @@ func _spin(direction: float = 1.0, release_velocity: float = 12.0) -> void:
  var choice: Dictionary = Model.choose(slices, rng.randf())
  if choice.index < 0: return
  var winner: Dictionary = slices[choice.index].duplicate(true)
+ var landing := Model.landing_angle(choice, rng.randf())
  busy = true
  data.last_preset_id = preset.id
  _save(); _refresh_editor(); _refresh_wheel()
@@ -426,12 +430,12 @@ func _spin(direction: float = 1.0, release_velocity: float = 12.0) -> void:
  spin_seconds = _duration()
  var sign_value := 1.0 if direction >= 0 else -1.0
  var speed := clampf(absf(release_velocity), .6, 40.0)
- var alignment := fposmod(-float(choice.center_angle) - spin_start, TAU) if sign_value > 0 else fposmod(spin_start + float(choice.center_angle), TAU)
+ var alignment := fposmod(-landing - spin_start, TAU) if sign_value > 0 else fposmod(spin_start + landing, TAU)
  var turns := maxi(0, int(ceil((speed * spin_seconds / 2.0 - alignment) / TAU)))
  spin_distance = sign_value * (alignment + TAU * turns)
  spin_initial_velocity = sign_value * speed
  var target := spin_start + spin_distance
- _sound(false)
+ wheel_audio.begin(wheel.rotation, data.settings.sound)
  tween = create_tween()
  tween.tween_method(_animate_spin, 0.0, 1.0, spin_seconds)
  tween.finished.connect(func():
@@ -440,7 +444,7 @@ func _spin(direction: float = 1.0, release_velocity: float = 12.0) -> void:
   # History deliberately has no automatic trimming: reset is the user's choice.
   if _remove_winner(): preset.remaining_ids.erase(winner.id)
   busy = false; OS.low_processor_usage_mode = true
-  _sound(true); _save(); _refresh_editor(); _refresh_result()
+  wheel_audio.finish(data.settings.sound); _save(); _refresh_editor(); _refresh_result()
   # Hold landed wheel until the next spin/reset. Keep status truthful to next round.
   spin_button.disabled = Model.active_slices(preset).size() < 2
   status.text = "라운드를 복원해 다시 시작하세요." if spin_button.disabled else ""
@@ -479,7 +483,10 @@ func _settings() -> void:
  var remove := CheckButton.new(); remove.text = "당첨 항목을 다음 회전에서 제외"; remove.button_pressed = data.settings.remove_winner; box.add_child(remove)
  remove.toggled.connect(func(v): data.settings.remove_winner = v; _changed(); _refresh_wheel())
  var sound := CheckButton.new(); sound.text = "회전 · 당첨 효과음"; sound.button_pressed = data.settings.sound; box.add_child(sound)
- sound.toggled.connect(func(v): data.settings.sound = v; _changed())
+ sound.toggled.connect(func(v):
+  data.settings.sound = v
+  if not v: wheel_audio.stop()
+  _changed())
  _show_settings_layer(dialog)
 
 func _preset_settings() -> void:
@@ -559,9 +566,7 @@ func _message(title_text: String, message: String) -> void:
  var d := Layer.new(); d.transparent_bg = true; d.theme = theme; d.exclusive = true; d.title = title_text; d.dialog_text = message; _layer_parent().add_child(d); d.confirmed.connect(d.queue_free); d.canceled.connect(d.queue_free); d.popup_centered()
 
 func _sound(victory: bool) -> void:
- if not data.settings.sound: return
- audio.stream = load("res://assets/victory.wav" if victory else "res://assets/spin.wav")
- audio.play()
+ if victory: wheel_audio.finish(data.settings.sound)
 
 func _commit_inputs(node: Node) -> void:
  for child in node.get_children():
@@ -622,6 +627,7 @@ func _animate_spin(t: float) -> void:
  var t2 := t * t
  var t3 := t2 * t
  wheel.rotation = spin_start + v * t + (10 * spin_distance - 6 * v) * t3 + (-15 * spin_distance + 8 * v) * t3 * t + (6 * spin_distance - 3 * v) * t3 * t2
+ wheel_audio.advance(wheel.rotation, Time.get_ticks_usec() / 1000000.0, data.settings.sound)
 
 func _wheel_position(viewport_position: Vector2) -> Vector2:
  var holder := wheel.get_parent() as Control
@@ -654,6 +660,7 @@ func _begin_drag(position_value: Vector2, pointer: int) -> void:
  var local := _wheel_position(position_value)
  var radius := minf(wheel.size.x, wheel.size.y) / 2 - 12
  if local.length() > radius or local.length() < radius * .22: return
+ wheel_audio.begin(wheel.rotation, data.settings.sound)
  dragging = true; busy = true; drag_pointer = pointer
  drag_last_angle = local.angle(); drag_last_time = Time.get_ticks_usec() / 1000000.0
  drag_distance = 0; drag_velocity = 0
@@ -669,6 +676,7 @@ func _move_drag(position_value: Vector2) -> void:
  var dt := maxf(.001, now - drag_last_time)
  var delta_angle := wrapf(local.angle() - drag_last_angle, -PI, PI)
  wheel.rotation += delta_angle
+ wheel_audio.advance(wheel.rotation, now, data.settings.sound)
  drag_distance += absf(delta_angle)
  var sample := clampf(delta_angle / dt, -40, 40)
  drag_velocity = sample if drag_distance < .2 else lerpf(drag_velocity, sample, .65)
@@ -683,11 +691,14 @@ func _end_drag() -> void:
  current_rotation = fposmod(wheel.rotation, TAU)
  _refresh_editor(); _refresh_wheel()
  if should_spin: _spin(signf(velocity), absf(velocity))
- else: OS.low_processor_usage_mode = true
+ else:
+  wheel_audio.stop()
+  OS.low_processor_usage_mode = true
  get_viewport().set_input_as_handled()
 
 func _cancel_drag() -> void:
  if not dragging: return
+ wheel_audio.stop()
  dragging = false; busy = false; drag_pointer = -2
  current_rotation = fposmod(wheel.rotation, TAU)
  OS.low_processor_usage_mode = true
