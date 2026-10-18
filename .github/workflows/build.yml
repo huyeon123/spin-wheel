@@ -54,6 +54,12 @@ jobs:
         run: XDG_DATA_HOME="$(mktemp -d)" "$GODOT" --headless --path . --script tests/test_overlays.gd
       - name: Test swipe gestures
         run: XDG_DATA_HOME="$(mktemp -d)" "$GODOT" --headless --path . --script tests/test_gestures.gd
+      - name: Test result display
+        run: XDG_DATA_HOME="$(mktemp -d)" "$GODOT" --headless --path . --script tests/test_result.gd
+      - name: Test custom selectors
+        run: XDG_DATA_HOME="$(mktemp -d)" "$GODOT" --headless --path . --script tests/test_selectors.gd
+      - name: Test integer weights
+        run: XDG_DATA_HOME="$(mktemp -d)" "$GODOT" --headless --path . --script tests/test_integer_weights.gd
       - name: Export Windows and Android
         run: ./scripts/build.sh all
       - name: Package Windows bundle

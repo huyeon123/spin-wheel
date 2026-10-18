@@ -1,6 +1,7 @@
 extends Control
 
 const Model = preload("res://scripts/wheel_model.gd")
+const Select = preload("res://scripts/wheel_select.gd")
 const Wheel = preload("res://scripts/wheel_canvas.gd")
 const PALETTE = ["#a89bea", "#ffcc75", "#7ad3b9", "#f69ca9", "#83b9ed", "#d8b1df", "#a8d584", "#f4b18c"]
 var data: Dictionary
@@ -9,7 +10,7 @@ var busy := false
 var wheel: Control
 var body: GridContainer
 var editor: VBoxContainer
-var selectors: OptionButton
+var selectors: Button
 var result: Label
 var status: Label
 var spin_button: Button
@@ -26,7 +27,7 @@ var save_timer: Timer
 var history_dialog: AcceptDialog
 var narrow := false
 var editor_dialog: AcceptDialog
-var main_selector: OptionButton
+var main_selector: Button
 var dragging := false
 var drag_pointer := -2
 var drag_last_angle := 0.0
@@ -69,7 +70,12 @@ func _ready() -> void:
   print("UI_SMOKE_OK")
   get_tree().quit()
  if "--screenshot" in OS.get_cmdline_user_args():
+  await get_tree().process_frame
+  await get_tree().process_frame
   if "--editor-shot" in OS.get_cmdline_user_args(): _open_editor()
+  if "--result-shot" in OS.get_cmdline_user_args():
+   preset.duration_override = 1.0; data.settings.sound = false; _spin(); await tween.finished
+  if "--selector-shot" in OS.get_cmdline_user_args(): main_selector.open_choices()
   await get_tree().create_timer(1.5).timeout
   get_viewport().get_texture().get_image().save_png("res://build/screenshot.png")
   get_tree().quit()
@@ -113,8 +119,9 @@ func _theme() -> void:
  panel.content_margin_left = 24; panel.content_margin_right = 24
  panel.content_margin_top = 24; panel.content_margin_bottom = 24
  t.set_stylebox("panel", "PanelContainer", panel)
- t.set_stylebox("panel", "AcceptDialog", panel)
- var border := StyleBoxFlat.new(); border.bg_color = Color.WHITE; border.border_color = Color("eae6f9"); border.set_border_width_all(2); border.border_width_top = 36; border.expand_margin_top = 36; border.expand_margin_left = 2; border.expand_margin_right = 2; border.expand_margin_bottom = 2; border.set_corner_radius_all(16)
+ var dialog_panel := panel.duplicate() as StyleBoxFlat; dialog_panel.corner_radius_top_left = 0; dialog_panel.corner_radius_top_right = 0; dialog_panel.corner_radius_bottom_left = 20; dialog_panel.corner_radius_bottom_right = 20
+ t.set_stylebox("panel", "AcceptDialog", dialog_panel)
+ var border := StyleBoxFlat.new(); border.bg_color = Color.WHITE; border.border_color = Color.WHITE; border.set_border_width_all(0); border.border_width_top = 36; border.expand_margin_top = 36; border.set_corner_radius_all(20)
  t.set_stylebox("embedded_border", "Window", border)
  t.set_constant("title_height", "Window", 36); t.set_font_size("title_font_size", "Window", 16)
  t.set_color("title_color", "Window", Color("3d3457"))
@@ -152,15 +159,15 @@ func _build() -> void:
  var header := _row(); outer.add_child(header)
  var left_spacer := Control.new(); left_spacer.custom_minimum_size.x = 48; header.add_child(left_spacer)
  var center := CenterContainer.new(); center.size_flags_horizontal = Control.SIZE_EXPAND_FILL; header.add_child(center)
- main_selector = OptionButton.new(); main_selector.fit_to_longest_item = false; main_selector.clip_text = true; main_selector.custom_minimum_size.x = 220; main_selector.tooltip_text = "프리셋 전환"; center.add_child(main_selector)
+ main_selector = Select.new(); main_selector.fit_to_longest_item = false; main_selector.clip_text = true; main_selector.custom_minimum_size.x = 220; main_selector.tooltip_text = "프리셋 전환"; center.add_child(main_selector)
  main_selector.item_selected.connect(_select_preset)
  var gear := _button("", _settings_hub); gear.icon = load("res://assets/settings.svg"); gear.custom_minimum_size = Vector2(48,48); gear.tooltip_text = "설정"; header.add_child(gear)
  for property in gear.get_property_list():
   if property.name == "accessibility_name": gear.set("accessibility_name", "설정")
- var last := PanelContainer.new(); last.size_flags_horizontal = Control.SIZE_SHRINK_END; var result_style := theme.get_stylebox("panel", "PanelContainer").duplicate() as StyleBoxFlat; result_style.content_margin_top = 14; result_style.content_margin_bottom = 14; last.add_theme_stylebox_override("panel", result_style); outer.add_child(last)
+ var last := PanelContainer.new(); last.size_flags_horizontal = Control.SIZE_SHRINK_CENTER; last.custom_minimum_size.y = 48; var result_style := theme.get_stylebox("panel", "PanelContainer").duplicate() as StyleBoxFlat; result_style.content_margin_top = 14; result_style.content_margin_bottom = 14; last.add_theme_stylebox_override("panel", StyleBoxEmpty.new()); outer.add_child(last)
  var lr := _row(); last.add_child(lr)
  result = _label("첫 번째 행운을 돌려보세요", 20)
- result.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT; result.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+ result.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; result.size_flags_horizontal = Control.SIZE_EXPAND_FILL
  result.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; lr.add_child(result)
  stage_spacer = Control.new(); outer.add_child(stage_spacer)
  body = GridContainer.new(); body.columns = 1; body.add_theme_constant_override("h_separation", 24); body.add_theme_constant_override("v_separation", 24); outer.add_child(body)
@@ -194,7 +201,8 @@ func _responsive() -> void:
  narrow = size.x < 880
  body.columns = 1
  wheel_aspect.custom_minimum_size.y = 400 if narrow else 430
- stage_spacer.custom_minimum_size.y = maxf(8, (size.y - wheel_aspect.custom_minimum_size.y - 160) / 2)
+ stage_spacer.custom_minimum_size.y = clampf((size.y - wheel_aspect.custom_minimum_size.y - 260) / 8, 12, 40)
+ if result != null: _refresh_result()
  if editor_dialog.visible: _size_editor()
 
 func _size_editor() -> void:
@@ -235,15 +243,16 @@ func _refresh_picker() -> void:
  main_selector.disabled = busy
 
 func _refresh_result() -> void:
- result.text = str(preset.history.back().name) if not preset.history.is_empty() else "—"
- result.get_parent().get_parent().visible = not preset.history.is_empty()
+ result.text = str(preset.history.back().name) if not preset.history.is_empty() else ""
+ result.custom_minimum_size.x = clampf(font.get_string_size(result.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x + 8, 80, maxf(80, size.x - 112))
+ result.get_parent().get_parent().visible = true
 
 func _refresh_editor() -> void:
  _refresh_picker()
  for child in editor.get_children(): child.queue_free(); editor.remove_child(child)
  editor.add_child(_label("나의 룰렛", 22))
  var pr := _row(); editor.add_child(pr)
- selectors = OptionButton.new(); selectors.fit_to_longest_item = false; selectors.clip_text = true; selectors.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+ selectors = Select.new(); selectors.fit_to_longest_item = false; selectors.clip_text = true; selectors.size_flags_horizontal = Control.SIZE_EXPAND_FILL
  for p in data.presets: selectors.add_item(p.name)
  selectors.select(data.presets.find(preset)); selectors.disabled = busy
  selectors.item_selected.connect(_select_preset)
@@ -252,9 +261,14 @@ func _refresh_editor() -> void:
  var name_input := LineEdit.new(); name_input.text = preset.name; name_input.placeholder_text = "룰렛 이름"; name_input.max_length = 40; name_input.editable = not busy
  name_input.text_changed.connect(func(value): preset.name = value; preset_name.text = value; selectors.set_item_text(data.presets.find(preset),value); _refresh_picker(); _changed())
  editor.add_child(name_input)
- var mode := OptionButton.new(); mode.add_item("비율로 정하기 · 1 : 1"); mode.add_item("백분율로 정하기 · 50 : 50"); mode.select(0 if preset.mode == "ratio" else 1); mode.disabled = busy
+ var mode := Select.new(); mode.add_item("비율로 정하기 · 1 : 1"); mode.add_item("백분율로 정하기 · 50 : 50"); mode.select(0 if preset.mode == "ratio" else 1); mode.disabled = busy
  mode.item_selected.connect(_change_mode); editor.add_child(mode)
- var note := _label("이름 · 색상 · 가중치", 13); note.add_theme_color_override("font_color", Color("7f879d")); editor.add_child(note)
+ var equalize := _button("균등 분배", _equalize); equalize.disabled = busy; editor.add_child(equalize)
+ var has_fraction := false
+ for slice in preset.slices: has_fraction = has_fraction or float(slice.weight) != floorf(float(slice.weight))
+ if has_fraction:
+  var legacy := _label("이전 소수 값 유지 중 · 균등 분배 또는 정수 수정으로 변경",12); legacy.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; editor.add_child(legacy)
+ var note := _label("이름 · 색상 · 정수 가중치", 13); note.add_theme_color_override("font_color", Color("7f879d")); editor.add_child(note)
  for i in range(preset.slices.size()): _slice_row(i)
  var plus := _button("+ 항목 추가", _add_slice); plus.disabled = busy or preset.slices.size() >= 40; editor.add_child(plus)
  var info := _label("편집 내용은 자동 저장됩니다.\n항목을 편집하면 현재 라운드가 복원됩니다.", 12); info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; info.add_theme_color_override("font_color", Color("81899b")); editor.add_child(info)
@@ -270,8 +284,12 @@ func _slice_row(index: int) -> void:
  color.color_changed.connect(func(c): s.color = "#" + c.to_html(false); _definition_changed())
  var name_edit := LineEdit.new(); name_edit.text = s.name; name_edit.max_length = 40; name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL; name_edit.custom_minimum_size.x = 70; name_edit.editable = not busy; r.add_child(name_edit)
  name_edit.text_changed.connect(func(value): s.name = value; _definition_changed())
- var weight := SpinBox.new(); weight.min_value = .01; weight.max_value = 100 if preset.mode == "percent" else 1000000; weight.step = .01; weight.value = s.weight; weight.custom_minimum_size.x = 98; weight.editable = not busy; weight.suffix = "%" if preset.mode == "percent" else ""; r.add_child(weight)
- weight.value_changed.connect(func(value): s.weight = value; _definition_changed())
+ var weight := LineEdit.new(); weight.text = _weight_text(float(s.weight)); weight.custom_minimum_size.x = 98; weight.max_length = 24; weight.editable = not busy; weight.tooltip_text = "양의 정수 입력"; r.add_child(weight)
+ weight.text_changed.connect(func(value):
+  if _set_integer_weight(s, value, preset.mode): weight.remove_theme_color_override("font_color"); _definition_changed()
+  else: weight.add_theme_color_override("font_color",Color("b03b3b")); weight.tooltip_text = "정수만 입력할 수 있습니다. 기존 값은 유지됩니다.")
+ weight.focus_exited.connect(func(): weight.text = _weight_text(float(s.weight)); weight.remove_theme_color_override("font_color"))
+
  var remove := _button("×", func():
   preset.slices.remove_at(index); _definition_changed(); _refresh_editor())
  remove.custom_minimum_size.x = 42; remove.disabled = busy or preset.slices.size() <= 2; r.add_child(remove)
@@ -285,20 +303,53 @@ func _lock_buttons(node: Node, locked: bool) -> void:
 
 func _change_mode(index: int) -> void:
  if busy: return
- if index == 1 and preset.mode != "percent":
-  var total := 0.0
-  for s in preset.slices: total += float(s.weight)
-  var assigned := 0.0
-  for i in range(preset.slices.size()):
-   var value := snappedf(float(preset.slices[i].weight) / total * 100, .01)
-   if i == preset.slices.size()-1: value = snappedf(100 - assigned,.01)
-   if value <= 0:
-    _message("변환할 수 없어요", "너무 작은 비율은 0.01%로 표현할 수 없습니다. 비율 모드를 유지해 주세요."); _refresh_editor(); return
-   assigned += value
-  # Keep exact weights to preserve probabilities; display editor rounds only.
-  for s in preset.slices: s.weight = float(s.weight) / total * 100
- preset.mode = "percent" if index == 1 else "ratio"
+ var target := "percent" if index == 1 else "ratio"
+ if target == preset.mode: return
+ var old_total := 0.0
+ var fractional := false
+ for s in preset.slices:
+  old_total += float(s.weight)
+  fractional = fractional or float(s.weight) != floorf(float(s.weight))
+ var weights: Array = []
+ if target == "percent" or fractional:
+  weights = _integer_percent_weights(preset.slices)
+  if weights.is_empty():
+   _message("정수 단위 변환", "양의 정수 백분율은 최대 100개 항목에만 적용할 수 있습니다."); _refresh_editor(); return
+ else:
+  for s in preset.slices: weights.append(int(s.weight))
+ var new_total := 0.0
+ for w in weights: new_total += float(w)
+ var changed := false
+ for i in range(weights.size()):
+  changed = changed or absf(float(preset.slices[i].weight) / old_total - float(weights[i]) / new_total) > .00000001
+  preset.slices[i].weight = float(weights[i])
+ preset.mode = target
  _definition_changed(); _refresh_editor()
+ if changed: _message("정수 단위 변환", "정수 단위에 맞춰 확률을 가장 가까운 분배로 조정했습니다. 항목별 값을 확인해 주세요.")
+
+func _integer_percent_weights(slices: Array) -> Array:
+ if slices.is_empty() or slices.size() > 100: return []
+ var total := 0.0
+ for s in slices: total += float(s.weight)
+ if total <= 0: return []
+ var result: Array = []
+ var fractions: Array = []
+ var assigned := 0
+ for s in slices:
+  var quota := float(s.weight) / total * 100
+  var base := maxi(1, int(floor(quota)))
+  result.append(base); fractions.append(quota - base); assigned += base
+ while assigned > 100:
+  var largest := 0
+  for i in range(result.size()):
+   if result[i] > result[largest]: largest = i
+  result[largest] -= 1; assigned -= 1
+ while assigned < 100:
+  var best := 0
+  for i in range(fractions.size()):
+   if fractions[i] > fractions[best]: best = i
+  result[best] += 1; fractions[best] = -1000.0; assigned += 1
+ return result
 
 func _add_slice() -> void:
  if busy: return
@@ -425,7 +476,7 @@ func _preset_settings() -> void:
  custom.toggled.connect(func(v): preset.duration_override = seconds.value if v else null; seconds.editable = v; _changed(); _refresh_wheel())
  seconds.value_changed.connect(func(v): if custom.button_pressed: preset.duration_override = v; _changed(); _refresh_wheel())
  box.add_child(_label("당첨 항목 처리"))
- var remove := OptionButton.new(); remove.add_item("전체 설정 따르기"); remove.add_item("항상 유지"); remove.add_item("항상 제외"); remove.select(0 if preset.remove_override == null else (2 if preset.remove_override else 1)); box.add_child(remove)
+ var remove := Select.new(); remove.add_item("전체 설정 따르기"); remove.add_item("항상 유지"); remove.add_item("항상 제외"); remove.select(0 if preset.remove_override == null else (2 if preset.remove_override else 1)); box.add_child(remove)
  remove.item_selected.connect(func(i): preset.remove_override = null if i == 0 else i == 2; _changed(); _refresh_wheel())
  _show_settings_layer(dialog)
 
@@ -451,11 +502,11 @@ func _history(page: int = 0) -> void:
  history_dialog.confirmed.connect(history_dialog.queue_free); history_dialog.canceled.connect(history_dialog.queue_free); history_dialog.popup_centered()
 
 func _confirm(title_text: String, message: String, action: Callable) -> void:
- var d := ConfirmationDialog.new(); d.theme = theme; d.exclusive = true; d.title = title_text; d.dialog_text = message; d.ok_button_text = "확인"; d.cancel_button_text = "취소"; _layer_parent().add_child(d)
+ var d := ConfirmationDialog.new(); d.transparent_bg = true; d.theme = theme; d.exclusive = true; d.title = title_text; d.dialog_text = message; d.ok_button_text = "확인"; d.cancel_button_text = "취소"; _layer_parent().add_child(d)
  d.confirmed.connect(func(): action.call(); d.queue_free()); d.canceled.connect(d.queue_free); d.popup_centered()
 
 func _message(title_text: String, message: String) -> void:
- var d := AcceptDialog.new(); d.theme = theme; d.exclusive = true; d.title = title_text; d.dialog_text = message; _layer_parent().add_child(d); d.confirmed.connect(d.queue_free); d.canceled.connect(d.queue_free); d.popup_centered()
+ var d := AcceptDialog.new(); d.transparent_bg = true; d.theme = theme; d.exclusive = true; d.title = title_text; d.dialog_text = message; _layer_parent().add_child(d); d.confirmed.connect(d.queue_free); d.canceled.connect(d.queue_free); d.popup_centered()
 
 func _sound(victory: bool) -> void:
  if not data.settings.sound: return
@@ -468,8 +519,13 @@ func _commit_inputs(node: Node) -> void:
   _commit_inputs(child)
 
 func _has_layer() -> bool:
- for child in get_children():
-  if child is Window and child.visible: return true
+ return _find_visible_window(self)
+
+func _find_visible_window(node: Node) -> bool:
+ for child in node.get_children():
+  if child is Window:
+   if child.visible: return true
+  elif _find_visible_window(child): return true
  return false
 
 func _layer_parent() -> Node:
@@ -487,6 +543,7 @@ func _close_top_layer(node: Node = self) -> bool:
    if child is AcceptDialog: child.canceled.emit()
    else: child.close_requested.emit()
    return true
+  elif not child is Window and _close_top_layer(child): return true
  return false
 
 func _show_settings_layer(dialog: AcceptDialog) -> void:
@@ -502,6 +559,7 @@ func _show_settings_layer(dialog: AcceptDialog) -> void:
 
 func _register_layer(node: Node) -> void:
  if node is Window:
+  node.transparent_bg = true
   node.visibility_changed.connect(_sync_scrim)
   node.tree_exiting.connect(func(): _sync_scrim.call_deferred())
 
@@ -599,3 +657,23 @@ func _icon_button(path: String, description: String, action: Callable) -> Button
  for property in button.get_property_list():
   if property.name == "accessibility_name": button.set("accessibility_name",description)
  return button
+
+func _set_integer_weight(slice: Dictionary, value: String, mode: String = "ratio") -> bool:
+ if value.length() > (3 if mode == "percent" else 7) or not value.is_valid_int(): return false
+ var parsed := value.to_int()
+ if parsed <= 0 or parsed > (100 if mode == "percent" else 1000000): return false
+ slice.weight = float(parsed)
+ return true
+
+func _equalize() -> void:
+ if busy: return
+ var count: int = preset.slices.size()
+ if count < 1: return
+ if preset.mode == "percent" and count > 100:
+  _message("균등 분배", "양의 정수 백분율은 최대 100개 항목에만 분배할 수 있습니다."); return
+ for i in range(count):
+  preset.slices[i].weight = 1.0 if preset.mode == "ratio" else float(100 / count + (1 if i < 100 % count else 0))
+ _definition_changed(); _refresh_editor()
+
+func _weight_text(value: float) -> String:
+ return str(int(value)) if value == floorf(value) else str(value)

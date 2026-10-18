@@ -76,3 +76,13 @@ Native Godot Linux renderer, Xorg dummy display, Mesa llvmpipe software OpenGL, 
 - Antialiased rim and center circles. Slice text dynamically chooses white or dark ink using relative luminance contrast for user-selected colors.
 
 Final detail regression total: **10,252 checks passed** (10,165 model,22 UI,4 layout,26 overlays,35 gestures). Additional checks verify vector-pointer center alignment and white-on-black/dark-on-white slice-label selection. Latest four screenshots reflect the centered, enlarged wheel and neutral ivory finish.
+
+## Version 0.1.3 Windows feedback corrections
+
+- Reproduced blank-result bug: stored nonempty winner label collapsed to 1px inside a 49px shrinking badge. Fixed text sizing, moved winner to centered plain text between preset selector and wheel, removed badge, and reduced excessive spacing. Both empty and actual completed-spin screenshots checked on desktop/mobile-size layouts.
+- All selectors now use an in-app custom Button/PopupPanel component with consistent field, focus and selected states, anchored dropdown placement, keyboard/back handling and transparent rounded corners. No native OptionButton popup dependency.
+- Dialog viewport backgrounds are transparent and title/body corner shapes are consistent; square background leaks removed.
+- Explicit equal-distribution: ratios all1; percentage integer total100 (three entries34/33/33). Positive integer-only new weight input in both modes; invalid/overflow text rejected.
+- Legacy fractional values, including100000.5, remain accurately displayed and unchanged until explicit edit/conversion. Integer conversion uses constrained largest-remainder allocation, warns if probabilities change, and rejects >100 positive-percent entries.
+- All8 suites pass:10,165 model+22 UI+4 layout+26 overlay+35 gesture+31 result+11 selector+129 integer=**10,423 checks**.
+- Android0.1.3/versionCode4, same package and persistence schema. No migration deletes existing presets/history/settings. Windows native runtime verification is a subsequent local task; this cloud pass renders via Linux Godot.

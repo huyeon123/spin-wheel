@@ -71,21 +71,27 @@ func run() -> void:
  var info_nested := false
  for child in app.editor_dialog.get_children():
   if child is AcceptDialog and child.visible: info_nested = true
- check(info_nested and app.preset.mode == "ratio", "invalid conversion displays nested message and preserves ratio")
+ check(info_nested and app.preset.mode == "percent", "rounded conversion displays nested explanation")
  app._close_top_layer()
  await settle()
- app.preset.slices[0].weight = 1.0
- app.preset.slices[1].weight = 1.0
+ app.preset.mode = "ratio"
+ for slice in app.preset.slices: slice.weight = 1.0
  app._refresh_editor()
- var weights = all_of(app.editor, "SpinBox")
- weights[0].get_line_edit().text = "7.25"
+ var weights := []
+ for field in all_of(app.editor,"LineEdit"):
+  if field.tooltip_text == "양의 정수 입력": weights.append(field)
+ weights[0].text = "7"
+ weights[0].text_changed.emit("7")
  app._close_editor()
  await settle()
- check(is_equal_approx(app.preset.slices[0].weight, 7.25), "close commits typed numeric input")
- check(Model.load_data().presets[0].slices[0].weight == 7.25, "close saves typed numeric input")
+ check(is_equal_approx(app.preset.slices[0].weight, 7.0), "close commits typed numeric input")
+ check(Model.load_data().presets[0].slices[0].weight == 7.0, "close saves typed numeric input")
  check(root.gui_get_focus_owner() == opener, "close restores opener keyboard focus")
  app._open_editor()
  app._change_mode(1)
+ await settle()
+ for child in app.editor_dialog.get_children():
+  if child is AcceptDialog and child.visible: app._close_top_layer()
  app.preset.slices[0].weight = 12.0
  app._definition_changed()
  app._notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
