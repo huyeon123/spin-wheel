@@ -1,6 +1,8 @@
 extends Control
 
 const WindowGeometry = preload("res://scripts/window_geometry.gd")
+const SafeLayout = preload("res://scripts/safe_layout.gd")
+const DurationInput = preload("res://scripts/duration_input.gd")
 const Model = preload("res://scripts/wheel_model.gd")
 const Reorder = preload("res://scripts/reorder_handle.gd")
 const Layer = preload("res://scripts/wheel_layer.gd")
@@ -21,7 +23,7 @@ var status: Label
 var spin_button: Button
 var duration_label: Label
 var preset_name: Label
-var content_scroll: ScrollContainer
+var content_scroll: Control
 var audio: AudioStreamPlayer
 var font := preload("res://assets/NotoSansKR.otf")
 var current_rotation := 0.0
@@ -48,6 +50,11 @@ var scrim: ColorRect
 var editor_opener: Control
 var stage_spacer: Control
 var wheel_aspect: AspectRatioContainer
+var main_header: HBoxContainer
+var result_panel: PanelContainer
+var bottom_controls: Control
+var action_controls: HBoxContainer
+var safe_bounds := Rect2()
 
 func _ready() -> void:
  WindowGeometry.apply_desktop_startup(get_window())
@@ -162,65 +169,83 @@ func _build() -> void:
  var gradient := Gradient.new(); gradient.set_color(0,Color("f5f3ef")); gradient.set_color(1,Color("f5f3ef"))
  var texture := GradientTexture2D.new(); texture.gradient = gradient; texture.fill_from = Vector2(0,0); texture.fill_to = Vector2(1,1); texture.width = 256; texture.height = 256
  backdrop.texture = texture; backdrop.expand_mode = TextureRect.EXPAND_IGNORE_SIZE; backdrop.stretch_mode = TextureRect.STRETCH_SCALE; add_child(backdrop)
- var margin := MarginContainer.new()
- margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
- for side in ["left", "right", "top", "bottom"]: margin.add_theme_constant_override("margin_" + side, 24)
- add_child(margin)
- content_scroll = ScrollContainer.new()
- content_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
- content_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
- margin.add_child(content_scroll)
- var outer := VBoxContainer.new(); outer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
- outer.add_theme_constant_override("separation", 14); content_scroll.add_child(outer)
- var header := _row(); outer.add_child(header)
- var left_spacer := Control.new(); left_spacer.custom_minimum_size.x = 48; header.add_child(left_spacer)
- var center := CenterContainer.new(); center.size_flags_horizontal = Control.SIZE_EXPAND_FILL; header.add_child(center)
- main_selector = _button("", _preset_manager); main_selector.clip_text = true; main_selector.custom_minimum_size.x = 220; main_selector.tooltip_text = "프리셋 관리"; main_selector.accessibility_name = "프리셋 관리"; center.add_child(main_selector)
- var gear := _button("", _settings); gear.icon = load("res://assets/settings.svg"); gear.custom_minimum_size = Vector2(48,48); gear.tooltip_text = "설정"; header.add_child(gear)
+ # Main controls are independent regions. The footer never moves with wheel
+ # height, and no scroll container can push its buttons below the viewport.
+ content_scroll = Control.new(); content_scroll.name = "MainLayout"; content_scroll.mouse_filter = Control.MOUSE_FILTER_IGNORE
+ content_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); add_child(content_scroll)
+ main_header = _row(); main_header.name = "MainHeader"; content_scroll.add_child(main_header)
+ main_selector = _button("", _preset_manager); main_selector.clip_text = true; main_selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL; main_selector.custom_minimum_size.x = 0; main_selector.tooltip_text = "프리셋 관리"; main_selector.accessibility_name = "프리셋 관리"; main_header.add_child(main_selector)
+ var gear := _button("", _settings); gear.icon = load("res://assets/settings.svg"); gear.custom_minimum_size = Vector2(48,48); gear.tooltip_text = "설정"; main_header.add_child(gear)
  for property in gear.get_property_list():
   if property.name == "accessibility_name": gear.set("accessibility_name", "설정")
- var last := PanelContainer.new(); last.size_flags_horizontal = Control.SIZE_SHRINK_CENTER; last.custom_minimum_size.y = 48; var result_style := theme.get_stylebox("panel", "PanelContainer").duplicate() as StyleBoxFlat; result_style.content_margin_top = 14; result_style.content_margin_bottom = 14; last.add_theme_stylebox_override("panel", StyleBoxEmpty.new()); outer.add_child(last)
- var lr := _row(); last.add_child(lr)
- result = _label("첫 번째 행운을 돌려보세요", 20)
- result.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; result.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+ result_panel = PanelContainer.new(); result_panel.name = "MainResult"; result_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new()); content_scroll.add_child(result_panel)
+ var lr := _row(); result_panel.add_child(lr)
+ result = _label("", 20); result.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; result.vertical_alignment = VERTICAL_ALIGNMENT_CENTER; result.size_flags_horizontal = Control.SIZE_EXPAND_FILL
  result.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; lr.add_child(result)
- stage_spacer = Control.new(); outer.add_child(stage_spacer)
- body = GridContainer.new(); body.columns = 1; body.add_theme_constant_override("h_separation", 24); body.add_theme_constant_override("v_separation", 24); outer.add_child(body)
- var stage := PanelContainer.new(); var clear := StyleBoxEmpty.new(); stage.add_theme_stylebox_override("panel", clear); stage.size_flags_horizontal = Control.SIZE_EXPAND_FILL; body.add_child(stage)
- var stage_box := VBoxContainer.new(); stage_box.add_theme_constant_override("separation", 8); stage.add_child(stage_box)
- var eyebrow := _label("TODAY’S LITTLE LUCK", 12); eyebrow.add_theme_color_override("font_color", Color("80749e")); eyebrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; stage_box.add_child(eyebrow); eyebrow.hide()
- preset_name = _label(preset.name, 25); preset_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; preset_name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; stage_box.add_child(preset_name); preset_name.hide()
- var aspect := AspectRatioContainer.new(); wheel_aspect = aspect; aspect.ratio = 1; aspect.size_flags_horizontal = Control.SIZE_EXPAND_FILL; aspect.custom_minimum_size = Vector2(240,300); stage_box.add_child(aspect)
- var wheel_holder := Control.new(); aspect.add_child(wheel_holder)
+ stage_spacer = Control.new(); stage_spacer.hide(); content_scroll.add_child(stage_spacer)
+ body = GridContainer.new(); body.name = "WheelStage"; body.columns = 1; body.mouse_filter = Control.MOUSE_FILTER_IGNORE; content_scroll.add_child(body)
+ wheel_aspect = AspectRatioContainer.new(); wheel_aspect.ratio = 1; wheel_aspect.size_flags_horizontal = Control.SIZE_EXPAND_FILL; wheel_aspect.size_flags_vertical = Control.SIZE_EXPAND_FILL; body.add_child(wheel_aspect)
+ var wheel_holder := Control.new(); wheel_aspect.add_child(wheel_holder)
  wheel_shadow = WheelShadow.new(); wheel_shadow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); wheel_holder.add_child(wheel_shadow)
  wheel = Wheel.new(); wheel.draw_shadow = false; wheel.font = font; wheel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); wheel_holder.add_child(wheel)
  var pointer := TextureRect.new(); pointer.texture = load("res://assets/pointer.svg"); pointer.mouse_filter = Control.MOUSE_FILTER_IGNORE; pointer.expand_mode = TextureRect.EXPAND_IGNORE_SIZE; pointer.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED; pointer.anchor_left = .5; pointer.anchor_right = .5; pointer.offset_left = -16; pointer.offset_right = 16; pointer.offset_top = -2; pointer.offset_bottom = 30; wheel_holder.add_child(pointer)
- spin_button = _button("돌리기", _spin); spin_button.tooltip_text = "돌리기 (Space)"; spin_button.custom_minimum_size = Vector2(56,48); spin_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER; spin_button.add_theme_font_size_override("font_size", 21)
- spin_button.custom_minimum_size = Vector2(360,56); _accent_button(spin_button)
- status = _label("", 14); status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; stage_box.add_child(status)
- duration_label = _label("", 13); duration_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; stage_box.add_child(duration_label); duration_label.hide()
- stage_box.add_child(spin_button)
- var action_gap := Control.new(); action_gap.custom_minimum_size.y = 16; stage_box.add_child(action_gap)
- var controls := _row(); controls.add_theme_constant_override("separation",28); controls.alignment = BoxContainer.ALIGNMENT_CENTER; stage_box.add_child(controls)
- controls.add_child(_icon_button("res://assets/restart.svg", "라운드 복원", _reset_round))
- controls.add_child(_icon_button("res://assets/edit.svg", "룰렛 편집", _open_editor))
- controls.add_child(_icon_button("res://assets/history.svg", "결과 기록", _history))
+ preset_name = _label(preset.name, 25); preset_name.hide(); content_scroll.add_child(preset_name)
+ bottom_controls = Control.new(); bottom_controls.name = "BottomControls"; bottom_controls.mouse_filter = Control.MOUSE_FILTER_IGNORE; content_scroll.add_child(bottom_controls)
+ status = _label("", 14); status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; bottom_controls.add_child(status)
+ status.visibility_changed.connect(_responsive)
+ duration_label = _label("", 13); duration_label.hide(); bottom_controls.add_child(duration_label)
+ spin_button = _button("돌리기", _spin); spin_button.tooltip_text = "돌리기 (Space)"; spin_button.custom_minimum_size = Vector2(0,56); spin_button.add_theme_font_size_override("font_size",21); _accent_button(spin_button); bottom_controls.add_child(spin_button)
+ action_controls = _row(); action_controls.name = "AuxiliaryControls"; action_controls.add_theme_constant_override("separation",52); action_controls.alignment = BoxContainer.ALIGNMENT_CENTER; bottom_controls.add_child(action_controls)
+ action_controls.add_child(_icon_button("res://assets/restart.svg", "라운드 복원", _reset_round))
+ action_controls.add_child(_icon_button("res://assets/edit.svg", "룰렛 편집", _open_editor))
+ action_controls.add_child(_icon_button("res://assets/history.svg", "결과 기록", _history))
+ for action in action_controls.get_children():
+  action.custom_minimum_size = Vector2(48,48)
+  action.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+  action.add_theme_constant_override("h_separation",0)
+  for state in ["normal","hover","pressed","hover_pressed","focus","disabled"]:
+   var compact_style := action.get_theme_stylebox(state).duplicate() as StyleBoxFlat
+   compact_style.set_content_margin_all(8)
+   action.add_theme_stylebox_override(state,compact_style)
  editor_dialog = Layer.new(); editor_dialog.theme = theme; editor_dialog.title = "룰렛 편집"; editor_dialog.max_width = 760; editor_dialog.show_footer = false; editor_dialog.ok_button_text = "닫기"; editor_dialog.exclusive = true; add_child(editor_dialog)
  editor_dialog.confirmed.connect(_close_editor); editor_dialog.canceled.connect(_close_editor)
  editor = VBoxContainer.new(); editor.size_flags_horizontal = Control.SIZE_EXPAND_FILL; editor.add_theme_constant_override("separation", 16); editor_dialog.add_content(editor)
  _refresh_editor(); _refresh_wheel(); _refresh_result()
  editor_dialog.hide()
+ # Android can deliver native insets after the first frame, or change them
+ # without changing viewport size when system bars appear/disappear.
+ var inset_watch := Timer.new(); inset_watch.wait_time = 0.5; inset_watch.autostart = true; inset_watch.timeout.connect(_refresh_safe_layout); add_child(inset_watch)
+ _responsive.call_deferred()
 
 func _responsive() -> void:
- if body == null: return
- main_selector.custom_minimum_size.x = clampf(size.x - 180, 180, 440)
- spin_button.custom_minimum_size.x = minf(360, size.x - 80)
+ if bottom_controls == null or action_controls == null or spin_button == null: return
+ safe_bounds = SafeLayout.safe_rect(self)
+ var status_height := 40.0 if status.visible and not status.text.is_empty() else 0.0
+ var layout := SafeLayout.compute_main(Rect2(Vector2.ZERO,size),safe_bounds,status_height)
+ _place_main_control(main_header,layout.header)
+ _place_main_control(result_panel,layout.result)
+ _place_main_control(body,layout.wheel)
+ _place_main_control(bottom_controls,layout.footer)
+ _place_main_control(status,Rect2(layout.status.position-layout.footer.position,layout.status.size))
+ _place_main_control(spin_button,Rect2(layout.spin.position-layout.footer.position,layout.spin.size))
+ action_controls.add_theme_constant_override("separation",int(clampf((layout.actions.size.x-144.0)/4.0,12,52)))
+ _place_main_control(action_controls,Rect2(layout.actions.position-layout.footer.position,layout.actions.size))
+ main_selector.custom_minimum_size.x = 0
+ wheel_aspect.custom_minimum_size = Vector2.ZERO
  narrow = size.x < 880
  body.columns = 1
- wheel_aspect.custom_minimum_size.y = 400 if narrow else 430
- stage_spacer.custom_minimum_size.y = clampf((size.y - wheel_aspect.custom_minimum_size.y - 260) / 8, 12, 40)
  if result != null: _refresh_result()
- if editor_dialog.visible: _size_editor()
+ if editor_dialog != null and editor_dialog.visible: _size_editor()
+
+func _place_main_control(control: Control, rect: Rect2) -> void:
+ control.position = rect.position
+ control.size = rect.size
+
+func _refresh_safe_layout() -> void:
+ if SafeLayout.safe_rect(self).is_equal_approx(safe_bounds): return
+ _responsive()
+ for layer in get_tree().get_nodes_in_group("wheel_layers"):
+  if layer.visible: layer.layout_card()
 
 func _size_editor() -> void:
  editor_dialog.layout_card(Vector2i(760, 720))
@@ -250,7 +275,7 @@ func _refresh_picker() -> void:
 
 func _refresh_result() -> void:
  result.text = str(preset.history.back().name) if not preset.history.is_empty() else ""
- result.custom_minimum_size.x = clampf(font.get_string_size(result.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x + 8, 80, maxf(80, size.x - 112))
+ result.custom_minimum_size.x = 0
  result.get_parent().get_parent().visible = true
 
 func _refresh_editor() -> void:
@@ -432,6 +457,8 @@ func _new_preset() -> void:
  if busy or data.presets.size() >= Model.MAX_PRESETS: return
  var p: Dictionary = Model.default_data().presets[0].duplicate(true)
  p.id = _id(); p.name = "새 룰렛 " + str(data.presets.size()+1); p.history = []
+ p.slices = [{"id": _id(), "name": "", "color": PALETTE[0], "weight": 1.0}, {"id": _id(), "name": "", "color": PALETTE[1], "weight": 1.0}]
+ p.remaining_ids = [p.slices[0].id, p.slices[1].id]
  data.presets.append(p); preset = p
  _definition_changed(); _refresh_editor(); _refresh_result()
 
@@ -447,7 +474,7 @@ func _settings() -> void:
  var box := VBoxContainer.new(); box.add_theme_constant_override("separation",12); dialog.add_content(box)
  box.add_child(_label("변경 내용은 자동 저장됩니다.",12))
  box.add_child(_label("회전 시간 · 1–30초"))
- var seconds := SpinBox.new(); seconds.min_value = 1; seconds.max_value = 30; seconds.step = .5; seconds.value = data.settings.duration; seconds.suffix = "초"; box.add_child(seconds)
+ var seconds := DurationInput.new(); seconds.value = data.settings.duration; box.add_child(seconds)
  seconds.value_changed.connect(func(v): data.settings.duration = v; _changed(); _refresh_wheel())
  var remove := CheckButton.new(); remove.text = "당첨 항목을 다음 회전에서 제외"; remove.button_pressed = data.settings.remove_winner; box.add_child(remove)
  remove.toggled.connect(func(v): data.settings.remove_winner = v; _changed(); _refresh_wheel())
@@ -474,7 +501,7 @@ func _editor_preset_settings(box: VBoxContainer) -> void:
   _accent_button(radio,true) if radio.button_pressed else _clear_accent(radio)
   radio.toggled.connect(func(on): _accent_button(radio,true) if on else _clear_accent(radio))
   radio.add_theme_icon_override("radio_checked",load("res://assets/radio-on.svg")); radio.add_theme_icon_override("radio_unchecked",load("res://assets/radio-off.svg"))
- var seconds := SpinBox.new(); seconds.min_value = 1; seconds.max_value = 30; seconds.step = .5; seconds.value = _duration(); seconds.suffix = "초"; seconds.editable = custom.button_pressed; seconds.custom_minimum_size.x = 120; custom_row.add_child(seconds)
+ var seconds := DurationInput.new(); seconds.value = _duration(); seconds.editable = custom.button_pressed; seconds.custom_minimum_size.x = 120; custom_row.add_child(seconds)
  inherit.pressed.connect(func(): preset.duration_override = null; seconds.editable = false; seconds.set_value_no_signal(float(data.settings.duration)); _changed(); _refresh_wheel())
  custom.pressed.connect(func(): preset.duration_override = seconds.value; seconds.editable = true; _changed(); _refresh_wheel())
  seconds.value_changed.connect(func(v): if custom.button_pressed: preset.duration_override = v; _changed(); _refresh_wheel())
@@ -538,7 +565,7 @@ func _sound(victory: bool) -> void:
 
 func _commit_inputs(node: Node) -> void:
  for child in node.get_children():
-  if child is SpinBox: child.apply()
+  if child is SpinBox or child is DurationInput: child.apply()
   _commit_inputs(child)
 
 func _has_layer() -> bool:

@@ -33,14 +33,14 @@ func run()->void:
  check(app._top_layer().title=="전체 설정","gear directly opens global settings")
  check(not app._top_layer().show_footer and not app._top_layer()._ok.is_visible_in_tree(),"global settings has top close only")
  check(button(app._top_layer(),"현재 룰렛 설정")==null,"no intermediate settings chooser")
- var global=app._top_layer();all(global,"SpinBox")[0].value=9.5;await settle()
+ var global=app._top_layer();all(global,"LineEdit").filter(func(f):return f.get_meta("duration_input",false))[0].text="9.5";all(global,"LineEdit").filter(func(f):return f.get_meta("duration_input",false))[0].apply();await settle()
  app._close_top_layer();await settle()
  check(app._duration()==9.5,"default preset inherits changed global duration")
  app._preset_settings();await settle()
  check(app._top_layer()==app.editor_dialog and app.editor_dialog._scroll.scroll_vertical>0,"preset settings are editor bottom section")
- var seconds=all(app.editor,"SpinBox")[0]
+ var seconds=all(app.editor,"LineEdit").filter(func(f):return f.get_meta("duration_input",false))[0]
  check(not seconds.editable,"inherited duration field disabled")
- press(button(app.editor,"직접 설정"));seconds.value=3.5
+ press(button(app.editor,"직접 설정"));seconds.text="3.5";seconds.apply()
  check(app.preset.duration_override==3.5 and app._duration()==3.5,"custom duration overrides global")
  press(button(app.editor,"제외"))
  check(app._remove_winner() and app.preset.remove_override==true,"exclude override enabled")

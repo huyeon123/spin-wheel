@@ -35,6 +35,10 @@ func run() -> void:
  app._new_preset()
  var created = app.preset
  check(app.data.presets.size() == 2 and created.id != original.id, "new preset independent")
+ # This spin/removal fixture explicitly supplies four named choices; new drafts are blank.
+ created.slices = original.slices.duplicate(true)
+ for i in range(created.slices.size()): created.slices[i].id = "qa_choice_" + str(i)
+ app._definition_changed()
  app._spin()
  check(app.busy and app.selectors.disabled and app.spin_button.disabled, "spin locks UI")
  app._new_preset()

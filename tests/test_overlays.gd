@@ -109,8 +109,8 @@ func run() -> void:
  for child in app.get_children():
   if child.get_meta("is_layer",false) and child != app.editor_dialog and child.visible: settings = child
  check(settings != null and settings.exclusive, "global settings is modal")
- var seconds = all_of(settings, "SpinBox")[0]
- seconds.get_line_edit().text = "9.5"
+ var seconds = all_of(settings, "LineEdit").filter(func(f):return f.get_meta("duration_input",false))[0]
+ seconds.text = "9.5"
  app._close_top_layer()
  await settle()
  check(app.data.settings.duration == 9.5 and Model.load_data().settings.duration == 9.5, "settings back commits and saves typed duration")

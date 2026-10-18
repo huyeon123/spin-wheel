@@ -34,9 +34,12 @@ func _draw() -> void:
   var angle := start + sweep / 2
   var label: String = s.name
   if label.length() > 10: label = label.left(9) + "…"
-  var fs := clampi(int(r * .073), 12, 23)
+  var fs := clampi(int(r * .073), 12, 23) + 2
   if show_labels and sweep * r > 28:
    var pos := c + Vector2.from_angle(angle) * r * .64
+   var available := minf(r * .66, maxf(16, sweep * r * .52))
+   while label.length() > 1 and font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > available:
+    label = label.left(label.length() - 2) + "…" if not label.ends_with("…") else label.left(label.length() - 2) + "…"
    var text_size := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
    draw_string(font, pos - Vector2(text_size.x / 2, -fs * .34), label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, _label_color(Color(s.color)))
   start += sweep

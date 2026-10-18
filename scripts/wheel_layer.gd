@@ -1,5 +1,6 @@
 extends Control
 ## Viewport-sized in-app modal. Content and nested layers are deliberately separate.
+const SafeLayout = preload("res://scripts/safe_layout.gd")
 signal confirmed
 signal canceled
 signal close_requested
@@ -212,7 +213,9 @@ func layout_card(target: Vector2i = Vector2i.ZERO) -> void:
  if target != Vector2i.ZERO: _preferred = target
  position = Vector2.ZERO
  size = get_viewport_rect().size
- var available := Vector2(maxf(1, size.x - 32), maxf(1, size.y - 48))
+ var safe := SafeLayout.safe_rect(self)
+ var card_area := SafeLayout.inset_rect(safe, 16, 24)
+ var available := card_area.size
  var requested := Vector2(_preferred if _preferred != Vector2i.ZERO else min_size)
  var width := minf(minf(max_width, available.x), maxf(320, requested.x))
  # The scroll viewport never imposes its content's minimum height on the card.
@@ -224,15 +227,25 @@ func layout_card(target: Vector2i = Vector2i.ZERO) -> void:
  var height := minf(available.y, requested.y if _preferred != Vector2i.ZERO else maxf(requested.y, natural))
  card.custom_minimum_size = Vector2.ZERO
  if is_dropdown:
-  width = clampf(dropdown_anchor.size.x, 180, minf(560, size.x - 24))
-  height = minf(320, maxf(62, content.get_combined_minimum_size().y + 16))
+  var dropdown_area := SafeLayout.inset_rect(safe, 12, 12)
+  width = minf(maxf(dropdown_anchor.size.x, 180), minf(560, dropdown_area.size.x))
+  height = minf(dropdown_area.size.y, minf(320, maxf(62, content.get_combined_minimum_size().y + 16)))
   card.size = Vector2(width, height)
   var origin := dropdown_anchor.position + Vector2(0, dropdown_anchor.size.y + 6)
-  if origin.y + height > size.y - 12: origin.y = dropdown_anchor.position.y - height - 6
-  card.position = Vector2(clampf(origin.x,12,size.x-width-12),clampf(origin.y,12,size.y-height-12))
+  if origin.y + height > dropdown_area.end.y: origin.y = dropdown_anchor.position.y - height - 6
+  card.position = Vector2(clampf(origin.x,dropdown_area.position.x,maxf(dropdown_area.position.x,dropdown_area.end.x-card.size.x)),clampf(origin.y,dropdown_area.position.y,maxf(dropdown_area.position.y,dropdown_area.end.y-card.size.y)))
  else:
   card.size = Vector2(width, height)
-  card.position = (size - card.size) * 0.5
+  card.position = card_area.position + (card_area.size - card.size) * 0.5
+ _keep_focus_visible.call_deferred()
+
+func _keep_focus_visible() -> void:
+ if not is_inside_tree() or not visible: return
+ await get_tree().process_frame
+ if not is_inside_tree() or not visible: return
+ var focused := get_viewport().gui_get_focus_owner()
+ if is_instance_valid(focused) and content.is_ancestor_of(focused):
+  _scroll.ensure_control_visible(focused)
 
 func _settle_layout() -> void:
  if not is_inside_tree(): return

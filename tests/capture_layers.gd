@@ -15,7 +15,9 @@ func run() -> void:
  var app = load("res://main.tscn").instantiate(); root.add_child(app); current_scene = app
  for i in range(5): await process_frame
  var kind := OS.get_cmdline_user_args()[0] if not OS.get_cmdline_user_args().is_empty() else "add"
- if kind == "add": app._add_preset_dialog()
+ if kind == "blank-editor":
+  app._new_preset(); app._open_editor()
+ elif kind == "add": app._add_preset_dialog()
  elif kind == "history":
   for i in range(5):
    var slice: Dictionary = app.preset.slices[i % app.preset.slices.size()]
