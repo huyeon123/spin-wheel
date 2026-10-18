@@ -1,5 +1,6 @@
 extends Control
 
+const WindowGeometry = preload("res://scripts/window_geometry.gd")
 const Model = preload("res://scripts/wheel_model.gd")
 const Reorder = preload("res://scripts/reorder_handle.gd")
 const Layer = preload("res://scripts/wheel_layer.gd")
@@ -47,6 +48,7 @@ var stage_spacer: Control
 var wheel_aspect: AspectRatioContainer
 
 func _ready() -> void:
+ WindowGeometry.apply_desktop_startup(get_window())
  get_tree().quit_on_go_back = false
  child_entered_tree.connect(_register_layer)
  Engine.max_fps = 60

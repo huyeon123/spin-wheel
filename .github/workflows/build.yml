@@ -64,7 +64,7 @@ jobs:
         run: XDG_DATA_HOME="$(mktemp -d)" "$GODOT" --headless --path . --script tests/test_fixed_layers.gd
       - name: Test manager and reordering
         run: |
-          for suite in test_manager test_reorder_handle test_reorder_integration test_drag_continuity test_history test_editor_bounds; do
+          for suite in test_manager test_reorder_handle test_reorder_integration test_drag_continuity test_history test_editor_bounds test_window_geometry test_narrow_layers; do
             XDG_DATA_HOME="$(mktemp -d)" "$GODOT" --headless --path . --script "tests/$suite.gd"
           done
       - name: Test rendered button state contrast
@@ -74,6 +74,8 @@ jobs:
           for suite in test_button_states test_wheel_pixels; do
             XDG_DATA_HOME="$(mktemp -d)" LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a "$GODOT" --path . --audio-driver Dummy --rendering-method gl_compatibility --script "tests/$suite.gd"
           done
+      - name: Test native portrait startup
+        run: XDG_DATA_HOME="$(mktemp -d)" LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a "$GODOT" --path . --audio-driver Dummy --rendering-method gl_compatibility --script tests/test_window_geometry.gd -- --window-geometry-live
       - name: Export Windows and Android
         run: ./scripts/build.sh all
       - name: Package Windows bundle

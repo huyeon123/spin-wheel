@@ -114,3 +114,11 @@ Final detail regression total: **10,252 checks passed** (10,165 model,22 UI,4 la
 - Global settings/history bottom Close footers removed; topX, Escape/Android back and focus restoration remain. Final desktop/mobile captures checked.
 - Wheel separators now render after all slice fills. Native pixel regression fails the old interleaved draw order and passes uniform current seams at rest/rotation. Shadow drawing and offset remain unchanged.
 - Version0.2.2/Android code8; no persistence schema or user-data migration changes. Physical Windows handoff and Android device verification remain separate from cloud rendering.
+
+## Version 0.2.3 portrait desktop startup
+
+- Desktop starts in a portrait client window, preferring480×800 at100% scale, fitted to the current monitor's usable rectangle with margins and decoration reserves. Monitor coordinates are already pixels; DPI only scales desired dimensions. Negative monitor origins, taskbars, large decorations and small screens are covered. Mobile/web/headless/embedded/editor and explicit test window geometry are excluded.
+- Window remains resizable, with a monitor-safe dynamic minimum and no aspect-ratio lock. No saved preset/settings/history fields change. Wayland placement/workarea information is compositor-limited, so additional panel space is reserved and placement is left to the compositor.
+- Pure geometry tests pass2,766 checks over847 monitor/DPI combinations. Independent native X11 startup measured480×800 at(400,64) inside1280×900 workarea; native smoke passes2,770 checks including resize to520×800. This is not a Windows monitor/DPI runtime claim.
+- Seventeen headless suites pass14,694 checks without app errors, including76 narrow-layer checks over six overlay types at480×800,390×700,360×560 and320×480. Native button-state288 and separator3 checks also passed, totaling14,985 checks across19 suites, plus the repeated2,770-check native startup smoke.
+- Actual no-resolution-override main/editor/settings/manager portrait screenshots inspected. Version0.2.3/Android code9, same package and persistence paths.
