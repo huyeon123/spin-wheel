@@ -154,7 +154,7 @@ static func _sanitize(raw: Variant) -> Dictionary:
 		if not history is Array:
 			return {}
 		for entry: Variant in history:
-			if not entry is Dictionary or not entry.get("name") is String or not entry.get("color") is String:
+			if not entry is Dictionary or not entry.get("name") is String or (entry.has("color") and not entry.color is String):
 				return {}
 			var at: Variant = entry.get("at", "")
 			if not (at is String or _number(at)):

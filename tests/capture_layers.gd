@@ -19,9 +19,10 @@ func run() -> void:
   app._new_preset(); app._open_editor()
  elif kind == "add": app._add_preset_dialog()
  elif kind == "history":
-  for i in range(5):
-   var slice: Dictionary = app.preset.slices[i % app.preset.slices.size()]
-   app.preset.history.append({"name":slice.name,"color":slice.color,"at":"2026-10-18 15:%02d:00" % (18+i*3)})
+  for i in range(120):
+   var index := 0 if i < 48 else (1 if i < 84 else (2 if i < 108 else 3))
+   var slice: Dictionary = app.preset.slices[index % app.preset.slices.size()]
+   app.preset.history.append({"slice_id":slice.id,"name":slice.name,"color":slice.color,"at":"2026-10-18 15:%02d:00" % (i % 60)})
   app._history()
  elif kind == "global": app._settings()
  elif kind == "preset-drag":

@@ -4,6 +4,7 @@ const WheelAudio = preload("res://scripts/wheel_audio.gd")
 const WindowGeometry = preload("res://scripts/window_geometry.gd")
 const SafeLayout = preload("res://scripts/safe_layout.gd")
 const DurationInput = preload("res://scripts/duration_input.gd")
+const HistoryStats = preload("res://scripts/history_stats.gd")
 const Model = preload("res://scripts/wheel_model.gd")
 const Reorder = preload("res://scripts/reorder_handle.gd")
 const Layer = preload("res://scripts/wheel_layer.gd")
@@ -79,6 +80,7 @@ func _ready() -> void:
  _build()
  resized.connect(_responsive)
  _responsive()
+ SafeLayout.resume_fullscreen()
  if "--smoke" in OS.get_cmdline_user_args():
   await get_tree().process_frame
   print("UI_SMOKE_OK")
@@ -106,6 +108,7 @@ func _notification(what: int) -> void:
   _cancel_drag()
   if wheel_audio != null: wheel_audio.set_foreground(false)
  if what == NOTIFICATION_APPLICATION_FOCUS_IN or what == NOTIFICATION_APPLICATION_RESUMED:
+  SafeLayout.resume_fullscreen()
   if wheel_audio != null: wheel_audio.set_foreground(true)
  if what == NOTIFICATION_WM_GO_BACK_REQUEST:
   if not _close_top_layer():
@@ -442,7 +445,7 @@ func _spin(direction: float = 1.0, release_velocity: float = 12.0) -> void:
  tween.tween_method(_animate_spin, 0.0, 1.0, spin_seconds)
  tween.finished.connect(func():
   current_rotation = fposmod(target, TAU); wheel.rotation = current_rotation
-  preset.history.append({"name": winner.name, "color": winner.color, "at": Time.get_datetime_string_from_system(false, true)})
+  preset.history.append({"slice_id": winner.id, "name": winner.name, "color": winner.color, "at": Time.get_datetime_string_from_system(false, true)})
   # History deliberately has no automatic trimming: reset is the user's choice.
   if _remove_winner(): preset.remaining_ids.erase(winner.id)
   busy = false; OS.low_processor_usage_mode = true
@@ -531,34 +534,106 @@ func _editor_preset_settings(box: VBoxContainer) -> void:
 
 func _history(page: int = 0) -> void:
  if busy: return
- history_dialog = Layer.new(); history_dialog.theme = theme; history_dialog.exclusive = true; history_dialog.title = "결과 기록"; history_dialog.show_footer = false; history_dialog.min_size = Vector2i(500,370); add_child(history_dialog)
+ if page > 0:
+  _history_details(page)
+  return
+ history_dialog = _new_history_layer("결과 기록")
+ history_dialog.name = "HistorySummary"
  var box := VBoxContainer.new(); box.add_theme_constant_override("separation",18); history_dialog.add_content(box)
+ _history_subtitle(box)
+ box.add_child(_label("최근 기록",18))
+ var recent := VBoxContainer.new(); recent.name = "HistoryRecent"; recent.add_theme_constant_override("separation",14); box.add_child(recent)
+ _history_records(recent, preset.history.size() - 1, maxi(-1, preset.history.size() - 4))
+ var more := _button("기록 더 보기 ›", func(): _history_details()); more.name = "HistoryMoreRecords"; more.disabled = preset.history.is_empty(); box.add_child(more)
+ box.add_child(HSeparator.new())
+ var stats := VBoxContainer.new(); stats.name = "HistoryStatistics"; stats.add_theme_constant_override("separation",14); box.add_child(stats)
+ var summary := HistoryStats.summarize(preset.history)
+ var heading := _row(); stats.add_child(heading)
+ var heading_label := _label("통계",20); heading_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL; heading.add_child(heading_label)
+ heading.add_child(_label("총 %d회" % summary.total,18))
+ var help := _label("항목별 횟수 · 기록 비율",13); help.add_theme_color_override("font_color",Color("737d78")); stats.add_child(help)
+ if summary.legacy_count > 0:
+  var legacy_hint := _label("이전 기록은 이름 기준으로 따로 집계합니다.",12); legacy_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; legacy_hint.add_theme_color_override("font_color",Color("737d78")); stats.add_child(legacy_hint)
+ var bars := VBoxContainer.new(); bars.name = "HistoryBars"; bars.add_theme_constant_override("separation",16); stats.add_child(bars)
+ var groups: Array = summary.groups
+ if groups.is_empty(): bars.add_child(_label("기록이 쌓이면 통계가 표시됩니다.",14))
+ for i in range(mini(5,groups.size())): _history_bar(bars,groups[i])
+ if groups.size() > 5:
+  var more_groups := _button("항목 더 보기 · %d개" % (groups.size()-5), func(): pass)
+  more_groups.name = "HistoryMoreGroups"
+  more_groups.set_meta("shown_groups",5)
+  more_groups.pressed.connect(func():
+   var start: int = more_groups.get_meta("shown_groups")
+   var end := mini(start+20,groups.size())
+   for i in range(start,end): _history_bar(bars,groups[i])
+   more_groups.set_meta("shown_groups",end)
+   more_groups.text = "항목 더 보기 · %d개" % (groups.size()-end)
+   if end >= groups.size(): more_groups.hide(); more_groups.queue_free(), CONNECT_DEFERRED)
+  stats.add_child(more_groups)
+ _history_reset_footer(box,history_dialog)
+ history_dialog.popup_centered(Vector2i(520,900))
+
+func _new_history_layer(title_text: String) -> Control:
+ var dialog := Layer.new(); dialog.theme = theme; dialog.title = title_text; dialog.show_footer = false; dialog.focus_content_on_open = false; add_child(dialog)
+ dialog.add_to_group("history_views")
+ dialog.confirmed.connect(dialog.queue_free); dialog.canceled.connect(dialog.queue_free)
+ return dialog
+
+func _history_subtitle(box: VBoxContainer) -> void:
  var subtitle := _label(preset.name,16); subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; subtitle.add_theme_color_override("font_color",Color("737d78")); box.add_child(subtitle)
- var list := VBoxContainer.new(); list.add_theme_constant_override("separation",14); list.size_flags_horizontal = Control.SIZE_EXPAND_FILL; box.add_child(list)
+
+func _history_records(list: VBoxContainer, start: int, end: int) -> void:
  if preset.history.is_empty(): list.add_child(_label("아직 기록이 없습니다.",16))
- page = clampi(page,0,maxi(0,(preset.history.size()-1)/100))
- var start: int = preset.history.size() - 1 - page * 100
- var end := maxi(-1, start - 100)
- for i in range(start, end, -1):
+ for i in range(start,end,-1):
   var h: Dictionary = preset.history[i]
-  var row := _row(); row.add_theme_constant_override("separation",14); list.add_child(row)
-  if h.has("color") and Color.html_is_valid(str(h.color)):
-   var dot := Panel.new(); dot.custom_minimum_size = Vector2(12,12); dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-   var swatch := StyleBoxFlat.new(); swatch.bg_color = Color(h.color); swatch.set_corner_radius_all(6); dot.add_theme_stylebox_override("panel",swatch); row.add_child(dot)
+  var row := _row(); row.set_meta("history_record_index",i); row.add_theme_constant_override("separation",12); list.add_child(row)
+  var dot := Panel.new(); dot.custom_minimum_size = Vector2(12,12); dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+  var swatch := StyleBoxFlat.new(); swatch.bg_color = HistoryStats.stored_color(h); swatch.set_corner_radius_all(6); dot.add_theme_stylebox_override("panel",swatch); row.add_child(dot)
   var detail := VBoxContainer.new(); detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL; detail.add_theme_constant_override("separation",5); row.add_child(detail)
-  var winner_label := _label(str(h.name),22); winner_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; detail.add_child(winner_label)
+  var winner_label := _label(str(h.name),18); winner_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; detail.add_child(winner_label)
   if not str(h.get("at", "")).is_empty():
-   var timestamp := _label(str(h.at),13); timestamp.add_theme_color_override("font_color",Color("737d78")); detail.add_child(timestamp)
+   var timestamp := _label(str(h.at),12); timestamp.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; timestamp.add_theme_color_override("font_color",Color("737d78")); detail.add_child(timestamp)
   if i > end + 1: list.add_child(HSeparator.new())
+
+func _history_bar(bars: VBoxContainer, group: Dictionary) -> void:
+ var row := VBoxContainer.new(); row.add_theme_constant_override("separation",7); bars.add_child(row)
+ row.set_meta("history_group_key",group.key); row.set_meta("count",group.count); row.set_meta("percentage",group.percentage)
+ var heading := _row(); heading.add_theme_constant_override("separation",10); row.add_child(heading)
+ var name_label := _label(group.display_name,15); name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL; heading.add_child(name_label)
+ var ratio := _label("%d회 (%.1f%%)" % [group.count,group.percentage],13); ratio.size_flags_vertical = Control.SIZE_SHRINK_BEGIN; heading.add_child(ratio)
+ var bar := ProgressBar.new(); bar.custom_minimum_size.y = 8; bar.show_percentage = false; bar.max_value = 100; bar.step = 0; bar.value = group.percentage; bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+ var track := StyleBoxFlat.new(); track.bg_color = Color("edf0ed"); track.set_corner_radius_all(4)
+ var fill := StyleBoxFlat.new(); fill.bg_color = group.color; fill.set_corner_radius_all(4); fill.border_color = Color("a6b0aa"); fill.set_border_width_all(1)
+ bar.add_theme_stylebox_override("background",track); bar.add_theme_stylebox_override("fill",fill)
+ row.add_child(bar)
+
+func _history_details(page: int = 0) -> void:
+ if busy: return
+ var dialog := _new_history_layer("전체 기록"); dialog.name = "HistoryDetails"
+ var box := VBoxContainer.new(); box.add_theme_constant_override("separation",18); dialog.add_content(box)
+ _history_subtitle(box)
+ page = clampi(page,0,maxi(0,(preset.history.size()-1)/100))
+ dialog.set_meta("history_page",page)
+ var list := VBoxContainer.new(); list.name = "HistoryDetailRecords"; list.add_theme_constant_override("separation",14); box.add_child(list)
+ var start: int = preset.history.size()-1-page*100
+ var end := maxi(-1,start-100)
+ _history_records(list,start,end)
  var paging := _row(); box.add_child(paging)
- if page > 0: paging.add_child(_button("최근 기록", func(): _switch_layer(history_dialog, func(): _history(page - 1))))
- if end >= 0: paging.add_child(_button("이전 기록", func(): _switch_layer(history_dialog, func(): _history(page + 1))))
+ if page > 0: paging.add_child(_button("최근 기록",func(): _switch_layer(dialog,func(): _history_details(page-1))))
+ if end >= 0: paging.add_child(_button("이전 기록",func(): _switch_layer(dialog,func(): _history_details(page+1))))
+ _history_reset_footer(box,dialog)
+ dialog.popup_centered(Vector2i(520,760))
+
+func _history_reset_footer(box: VBoxContainer, _dialog: Control) -> void:
+ box.add_child(HSeparator.new())
  var footer := _row(); box.add_child(footer)
- var count := _label("%d개 기록" % preset.history.size(),14); count.size_flags_horizontal = Control.SIZE_EXPAND_FILL; footer.add_child(count)
- var reset := _button("기록 초기화", func():
-  _confirm("기록 초기화", "이 룰렛의 당첨 기록을 모두 지울까요? 되돌릴 수 없습니다.", func(): preset.history.clear(); _save(); _refresh_result(); history_dialog.dismiss(history_dialog.queue_free)))
+ var spacer := Control.new(); spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL; footer.add_child(spacer)
+ var reset := _button("기록 초기화",func():
+  _confirm("기록 초기화", "이 룰렛의 당첨 기록을 모두 지울까요? 되돌릴 수 없습니다.",func():
+   preset.history.clear(); _save(); _refresh_result()
+   for view in get_tree().get_nodes_in_group("history_views"):
+    if is_instance_valid(view): view.dismiss(view.queue_free)))
  _danger_button(reset); reset.disabled = preset.history.is_empty(); footer.add_child(reset)
- history_dialog.confirmed.connect(history_dialog.queue_free); history_dialog.canceled.connect(history_dialog.queue_free); history_dialog.popup_centered()
 
 func _confirm(title_text: String, message: String, action: Callable) -> void:
  var d := Layer.new(); d.transparent_bg = true; d.theme = theme; d.exclusive = true; d.title = title_text; d.dialog_text = message; d.ok_button_text = "확인"; d.cancel_button_text = "취소"; _layer_parent().add_child(d)

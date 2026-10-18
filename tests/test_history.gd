@@ -34,20 +34,23 @@ func run()->void:
  app._save();app._history();await settle()
  check(app.history_dialog.title=="결과 기록" and original.name in texts(app.history_dialog),"history title and preset subtitle")
  check(not app.history_dialog.show_footer and not app.history_dialog._ok.is_visible_in_tree(),"history has top close only")
- var labels=texts(app.history_dialog)
+ press(app.history_dialog,"기록 더 보기 ›");await settle()
+ var detail=app._top_layer()
+ var labels=texts(detail)
  check(labels.has("가".repeat(100)) and labels.has("winner_105") and not labels.has("winner_104"),"first page contains latest100 exact saved winner names")
  check(labels.has("saved timestamp 203") and not labels.has("saved timestamp 204"),"saved timestamps displayed without fabricating missing one")
- var dot_color:Color=all(app.history_dialog,"Panel")[0].get_theme_stylebox("panel").bg_color
+ var dot_color:Color=all(detail,"Panel")[0].get_theme_stylebox("panel").bg_color
  check(dot_color==Color("#123456"),"history uses saved color rather than current slice color")
- press(app.history_dialog,"이전 기록");await settle();labels=texts(app.history_dialog)
+ press(app._top_layer(),"이전 기록");await settle();labels=texts(app._top_layer())
  check(labels.has("winner_104") and labels.has("winner_005") and not labels.has("winner_004"),"second history page is correct100 records")
- press(app.history_dialog,"이전 기록");await settle();labels=texts(app.history_dialog)
+ press(app._top_layer(),"이전 기록");await settle();labels=texts(app._top_layer())
  check(labels.has("winner_004") and labels.has("winner_000") and not labels.has("winner_005"),"last history page contains oldest5")
- press(app.history_dialog,"최근 기록");await settle();check(texts(app.history_dialog).has("winner_104"),"recent-page navigation works")
+ press(app._top_layer(),"최근 기록");await settle();check(texts(app._top_layer()).has("winner_104"),"recent-page navigation works")
  check(Model.load_data().presets[0].history.size()==205,"paging never truncates persistent history")
- press(app.history_dialog,"기록 초기화");await settle();app._close_top_layer();await settle()
+ press(app._top_layer(),"기록 초기화");await settle();app._close_top_layer();await settle()
  check(original.history.size()==205 and app.history_dialog.visible,"reset cancellation preserves full history")
- app._close_top_layer();await settle();app._new_preset();var other=app.preset
+ while app._has_layer():app._close_top_layer();await settle()
+ app._new_preset();var other=app.preset
  other.history=[{"name":"other result","color":"#abcdef","at":"other timestamp"}]
  app._select_preset(0);app._history();await settle()
  press(app.history_dialog,"기록 초기화");await settle();app._top_layer().confirmed.emit();await settle()

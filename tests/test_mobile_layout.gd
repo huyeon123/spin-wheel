@@ -33,6 +33,29 @@ func run()->void:
  check(approx(Safe.exclude_keyboard(Rect2(0,90,1080,1350),baseline,900),keyboard_safe),"already resized keyboard safe area is not subtracted twice")
  check(approx(Safe.screen_to_local(Rect2(0,0,480,640),transform,keyboard_safe),Rect2(0,40,480,600)),"keyboard pixels map through stretch once")
  check(approx(Safe.exclude_keyboard(Rect2(0,90,1080,2187),baseline,0),Rect2(0,90,1080,2187)),"keyboard dismissal restores full safe region")
+ # Immersive cutout, transient system bars, keyboard and resume sequence.
+ var sequence=[Rect2(0,90,1080,2190),Rect2(0,120,1080,2100),Rect2(0,90,1080,2190),Rect2(0,90,1080,1350),Rect2(0,90,1080,2190)]
+ for native_safe in sequence:
+  var local_safe=Safe.screen_to_local(local,transform,native_safe)
+  var frame=Safe.compute_main(local,local_safe)
+  for key in ["header","result","wheel","spin","actions"]:
+   check(inside(frame[key],local_safe),"transient immersive state keeps "+key+" inside physical safe area")
+  check(frame.header.position.y>=native_safe.position.y/2.25,"camera inset remains applied through bar/IME changes")
+ check(approx(Safe.screen_to_local(local,transform,sequence[0]),Safe.screen_to_local(local,transform,sequence[-1])),"resume restores identical immersive geometry without accumulating insets")
+ var engine=Rect2(0,90,1080,2250)
+ check(approx(Safe.merge_safe_insets(baseline,engine,baseline,Vector4(0,120,0,60)),Rect2(0,120,1080,2160)),"native bars/cutout/gesture insets intersect engine cutout")
+ var inset_client=Rect2(0,90,1080,2190)
+ check(approx(Safe.merge_safe_insets(inset_client,inset_client,baseline,Vector4(0,90,0,60)),inset_client),"native merge never doubles already inset client")
+ check(approx(Safe.merge_safe_insets(baseline,engine,Rect2(),Vector4.ZERO),engine),"unattached native window preserves engine camera fallback")
+ check(approx(Safe.merge_safe_insets(baseline,engine,baseline,Vector4(0,NAN,0,0)),engine),"nonfinite native sample safely preserves fallback")
+ check(approx(Safe.merge_safe_insets(baseline,engine,baseline,Vector4(0,5000,0,5000)),engine),"invalid native bounds cannot collapse controls")
+ check(approx(Safe.merge_safe_insets(Rect2(0,0,1080,1440),engine,baseline,Vector4(0,120,0,60)),Rect2(0,120,1080,1320)),"resized keyboard client intersects native full bounds once")
+ var saved_sample=Safe._android_sample.duplicate(true)
+ Safe._android_generation=20;Safe._finish_android_sample(19,{"bounds":baseline,"insets":Vector4.ZERO})
+ check(Safe._android_sample==saved_sample,"late pre-resume sample cannot replace current generation")
+ Safe._finish_android_sample(20,{"bounds":baseline,"insets":Vector4(0,90,0,60)})
+ check(Safe._android_sample.insets==Vector4(0,90,0,60),"current native measurement accepted")
+ Safe._android_sample=saved_sample
  var cases=[Rect2(0,0,480,800),Rect2(0,40,480,972),Rect2(12,36,456,724),Rect2(0,24,480,456),Rect2(0,20,320,400)]
  for safe in cases:
   var bounds=Rect2(Vector2.ZERO,Vector2(safe.end.x,safe.end.y+20))
@@ -45,6 +68,8 @@ func run()->void:
  var app=load("res://main.tscn").instantiate();root.add_child(app);current_scene=app;await settle()
  for physical in [Vector2i(480,800),Vector2i(1080,2340),Vector2i(390,844),Vector2i(360,640),Vector2i(320,480),Vector2i(480,400)]:
   root.size=physical;await settle()
+  var backdrop=app.get_children().filter(func(n):return n is TextureRect and n.texture is GradientTexture2D)[0]
+  check(approx(backdrop.get_global_rect(),app.get_global_rect()),"background fills entire client independent of control safe area")
   check(inside(app.main_header.get_global_rect(),app.safe_bounds),"actual header safe "+str(physical))
   check(inside(app.spin_button.get_global_rect(),app.safe_bounds),"actual spin safe "+str(physical))
   check(inside(app.action_controls.get_global_rect(),app.safe_bounds),"actual bottom actions safe "+str(physical))
