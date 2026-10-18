@@ -86,3 +86,14 @@ Final detail regression total: **10,252 checks passed** (10,165 model,22 UI,4 la
 - Legacy fractional values, including100000.5, remain accurately displayed and unchanged until explicit edit/conversion. Integer conversion uses constrained largest-remainder allocation, warns if probabilities change, and rejects >100 positive-percent entries.
 - All8 suites pass:10,165 model+22 UI+4 layout+26 overlay+35 gesture+31 result+11 selector+129 integer=**10,423 checks**.
 - Android0.1.3/versionCode4, same package and persistence schema. No migration deletes existing presets/history/settings. Windows native runtime verification is a subsequent local task; this cloud pass renders via Linux Godot.
+
+## Version 0.2.0 approved redesign and interaction verification
+
+- Replaced every app modal with fixed Control overlays: no native Window/PopupPanel decoration, dragging or resizing. Anchored internal choice menus remain Control-based. Fields and controls have visible neutral edges; primary actions use teal and favorite stars use yellow.
+- Main preset name opens the separate manager with weighted miniature previews, select/edit/delete/add actions, favorite toggles and manual order handles. Main wide spin action is separated from reset/edit/history icons. Swipe remains available.
+- Roulette editor contains the existing preset name, exclusive ratio/percentage radio controls, integer inputs, explicit equal distribution and reorder handles. Switching mode explicitly equalizes (ratio1 each, percent integer total100). Existing stored fractions are not changed merely by loading.
+- Optional favorite defaults false for legacy saves. Favorites never sort automatically. Manual preset/slice array order survives save/reload. Rename keeps the same preset ID, history and settings. Pure reorder preserves removed-winner round state.
+- Handle-only reorder supports mouse/touch, an8px threshold, ghost/insertion line, edge autoscroll, Alt+Up/Down, focus-following rebuilds, and Escape/back/focus-loss cancellation. GUI touch emulation is enabled; wheel ignores emulated duplicate mouse events.
+- Real viewport-dispatched selection and reorder tests report no detached-viewport input errors. Hidden native context menus are disabled; focus trap includes internal SpinBox and color controls.
+- Twelve suites: **10,539 checks passed** (full run10,538 plus a new placeholder-color regression; modified manager/reorder/fixed-layer suites rerun after final visual fixes), no engine/script errors. Supplementary actual add/drag captures verified readable placeholders and separated insertion-line/ghost text.
+- Desktop and390×844 screenshots are actual Linux Godot rendering, not Windows/Android device captures. Windows runtime confirmation remains a subsequent user-PC step. Android0.2.0/versionCode6, unchanged package and signing path; no data migration deletes presets/history/settings.

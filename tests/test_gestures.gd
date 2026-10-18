@@ -34,7 +34,7 @@ func winner_at_pointer(app: Control) -> String:
  return ""
 func run() -> void:
  root.size=Vector2i(480,800)
- var app=load("res://main.tscn").instantiate(); root.add_child(app); await settle()
+ var app=load("res://main.tscn").instantiate(); root.add_child(app); current_scene=app; await settle()
  var pointer: TextureRect
  for child in app.wheel.get_parent().get_children():
   if child is TextureRect: pointer=child

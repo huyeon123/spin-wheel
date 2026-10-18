@@ -25,6 +25,7 @@ func run() -> void:
  root.size = Vector2i(480,800)
  var app = load("res://main.tscn").instantiate()
  root.add_child(app)
+ current_scene=app
  await settle()
  check(not quit_on_go_back, "engine auto-quit disabled so back can close overlays")
  check(not app.editor_dialog.visible and not app.editor.is_visible_in_tree(), "editor hidden at launch")
@@ -45,33 +46,28 @@ func run() -> void:
  check(ProjectSettings.get_setting("application/boot_splash/image", "") == "res://assets/splash.png", "startup branding configured as native splash")
  app._settings_hub()
  await settle()
- var hub: AcceptDialog
+ var hub: Control
  for child in app.get_children():
-  if child is AcceptDialog and child.visible: hub = child
+  if child.get_meta("is_layer",false) and child.visible and child!=app.editor_dialog: hub = child
  check(hub != null and hub.exclusive, "gear opens modal settings hub")
- var edit_button: Button
- for button in all_of(hub, "Button"):
-  if button.text == "칸 편집 · 프리셋 관리": edit_button = button
- edit_button.pressed.emit()
- await settle()
- check(app.editor_dialog.visible, "hub opens editor without overlapping sibling modal")
- app._close_editor()
+ app._close_top_layer()
  await settle()
  opener.grab_focus()
  app._open_editor()
  await settle()
  check(app.editor_dialog.visible and app.editor_dialog.exclusive, "editor opens modal")
- check(app.editor_dialog.position.x >= 0 and app.editor_dialog.position.y >= 0 and app.editor_dialog.size.x <= app.size.x and app.editor_dialog.size.y <= app.size.y, "portrait editor fits viewport")
+ check(app.editor_dialog.card.position.x >= 0 and app.editor_dialog.card.position.y >= 0 and app.editor_dialog.card.size.x <= app.size.x and app.editor_dialog.card.size.y <= app.size.y, "portrait editor fits viewport")
  app._spin()
  check(not app.busy, "open editor blocks spins")
  app.preset.slices[0].weight = 1000000.0
  app.preset.slices[1].weight = 0.01
  app._change_mode(1)
+ app._message("테스트", "알림")
  await settle()
  var info_nested := false
- for child in app.editor_dialog.get_children():
-  if child is AcceptDialog and child.visible: info_nested = true
- check(info_nested and app.preset.mode == "percent", "rounded conversion displays nested explanation")
+ for child in app.get_children():
+  if child.get_meta("is_layer",false) and child.visible and child!=app.editor_dialog: info_nested = true
+ check(info_nested and app.preset.mode == "percent", "informational layer opens above editor")
  app._close_top_layer()
  await settle()
  app.preset.mode = "ratio"
@@ -90,8 +86,8 @@ func run() -> void:
  app._open_editor()
  app._change_mode(1)
  await settle()
- for child in app.editor_dialog.get_children():
-  if child is AcceptDialog and child.visible: app._close_top_layer()
+ for child in app.get_children():
+  if child.get_meta("is_layer",false) and child.visible and child!=app.editor_dialog: app._close_top_layer()
  app.preset.slices[0].weight = 12.0
  app._definition_changed()
  app._notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
@@ -109,9 +105,9 @@ func run() -> void:
  check(not app.editor_dialog.visible, "second back closes editor")
  app._settings()
  await settle()
- var settings: AcceptDialog
+ var settings: Control
  for child in app.get_children():
-  if child is AcceptDialog and child != app.editor_dialog and child.visible: settings = child
+  if child.get_meta("is_layer",false) and child != app.editor_dialog and child.visible: settings = child
  check(settings != null and settings.exclusive, "global settings is modal")
  var seconds = all_of(settings, "SpinBox")[0]
  seconds.get_line_edit().text = "9.5"

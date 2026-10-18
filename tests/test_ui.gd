@@ -19,6 +19,7 @@ func frame() -> void:
 func run() -> void:
  var app = load("res://main.tscn").instantiate()
  root.add_child(app)
+ current_scene=app
  await frame()
  check(app.preset.id == "default", "default loaded")
  app.data.settings.duration = 1.0
@@ -73,7 +74,7 @@ func run() -> void:
  check(not app.busy, "invalid percent cannot spin")
  stored = Model.load_data()
  check(stored.presets[1].slices[0].weight == 12.0 and stored.presets[1].history.size() == 3, "invalid percent draft saved without history loss")
- app.selectors.item_selected.emit(0)
+ app._select_preset(0)
  check(app.preset.id == original.id and app.preset.history.is_empty(), "switch keeps histories separate")
  app._save()
  check(Model.load_data().last_preset_id == created.id, "browsing does not alter last-spun preset")
@@ -81,6 +82,7 @@ func run() -> void:
  await frame()
  var reopened = load("res://main.tscn").instantiate()
  root.add_child(reopened)
+ current_scene=reopened
  await frame()
  check(reopened.preset.id == created.id and reopened.preset.history.size() == 3, "relaunch restores last-spun preset and full history")
  reopened._change_mode(0)

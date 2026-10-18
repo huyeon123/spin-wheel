@@ -60,6 +60,13 @@ jobs:
         run: XDG_DATA_HOME="$(mktemp -d)" "$GODOT" --headless --path . --script tests/test_selectors.gd
       - name: Test integer weights
         run: XDG_DATA_HOME="$(mktemp -d)" "$GODOT" --headless --path . --script tests/test_integer_weights.gd
+      - name: Test fixed Control layers
+        run: XDG_DATA_HOME="$(mktemp -d)" "$GODOT" --headless --path . --script tests/test_fixed_layers.gd
+      - name: Test manager and reordering
+        run: |
+          for suite in test_manager test_reorder_handle test_reorder_integration; do
+            XDG_DATA_HOME="$(mktemp -d)" "$GODOT" --headless --path . --script "tests/$suite.gd"
+          done
       - name: Export Windows and Android
         run: ./scripts/build.sh all
       - name: Package Windows bundle

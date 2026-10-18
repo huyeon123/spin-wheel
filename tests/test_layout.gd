@@ -13,6 +13,7 @@ func run() -> void:
  root.size = Vector2i(480,800)
  var app = load("res://main.tscn").instantiate()
  root.add_child(app)
+ current_scene=app
  await settle()
  fits(app, "default portrait")
  app.preset.name = "가".repeat(40)

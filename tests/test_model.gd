@@ -115,6 +115,49 @@ func _init() -> void:
 	check(Model.save_data(data, path) == OK, "empty draft saved")
 	check(Model.load_data(path).presets[0].slices.is_empty(), "empty draft restored")
 	check(Model.validate_preset(Model.default_data().presets[0]) == "", "default preset ready to spin")
+	check(Model.default_data().presets[0].favorite == false, "default favorite false")
+	var first := sample()
+	var second := sample()
+	var third := sample()
+	second.id = "second"
+	third.id = "third"
+	first.favorite = true
+	second.favorite = false
+	third.favorite = "invalid legacy value"
+	first.history = [{"name": "A", "color": "#ff0000", "at": "2026-10-18T06:00:00"}]
+	first.remaining_ids = ["b"]
+	data = Model.default_data()
+	data.presets = [first, second, third]
+	data.last_preset_id = "p"
+	data.settings = {"duration": 7.5, "remove_winner": true, "sound": false}
+	check(Model.move_entry(data.presets, 0, 2), "move preset to final index")
+	check(data.presets[0].id == "second" and data.presets[1].id == "third" and data.presets[2].id == "p", "forward order correct")
+	check(is_same(data.presets[2], first), "move retains dictionary identity")
+	check(Model.move_entry(first.slices, 0, 1), "move slice")
+	check(first.slices[0].id == "b" and first.slices[1].id == "a", "slice order correct")
+	check(Model.save_data(data, path) == OK, "favorite and manual order saved")
+	var restored: Dictionary = Model.load_data(path)
+	check(restored.presets[2].favorite == true and restored.presets[0].favorite == false, "favorite values persist")
+	check(restored.presets[1].favorite == false, "invalid favorite sanitized false")
+	check(restored.presets[0].id == "second" and restored.presets[1].id == "third" and restored.presets[2].id == "p", "manual preset order persists")
+	check(restored.presets[2].slices[0].id == "b" and restored.presets[2].slices[1].id == "a", "manual slice order persists")
+	check(restored.presets[2].history == first.history and restored.presets[2].remaining_ids == ["b"], "reorder preserves round and history")
+	check(restored.settings == data.settings and restored.last_preset_id == "p" and restored.version == 1, "reorder preserves settings selection and version")
+	check(Model.save_data(restored, path) == OK and Model.load_data(path) == restored, "favorite/order stable across second save reload")
+	check(Model.move_entry(data.presets, 2, 0) and is_same(data.presets[0], first), "backward move retains identity")
+	var before_move: Array = data.presets.duplicate()
+	for indexes in [[-1, 0], [0, -1], [3, 0], [0, 3]]:
+		check(not Model.move_entry(data.presets, indexes[0], indexes[1]), "invalid move rejected")
+		check(data.presets == before_move, "invalid move leaves order intact")
+	check(Model.move_entry(data.presets, 1, 1) and data.presets == before_move, "valid no-op accepted")
+	check(not Model.move_entry([], 0, 0), "empty move rejected")
+	var legacy := Model.default_data()
+	legacy.presets = [sample()]
+	legacy.last_preset_id = "p"
+	f = FileAccess.open(path, FileAccess.WRITE)
+	f.store_string(JSON.stringify(legacy))
+	f.close()
+	check(Model.load_data(path).presets[0].favorite == false, "legacy file gains favorite false")
 	for suffix in ["", ".bak", ".tmp"]:
 		DirAccess.remove_absolute(path + suffix)
 	print("PASS: ", checks, " model checks")

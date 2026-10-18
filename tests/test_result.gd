@@ -22,7 +22,7 @@ func check_result(app: Control, expected: String) -> void:
  check(badge.global_position.x>=0 and badge.global_position.x+badge.size.x<=app.size.x+1,"result badge fits viewport")
 func run() -> void:
  root.size=Vector2i(480,800)
- var app=load("res://main.tscn").instantiate(); root.add_child(app); await settle()
+ var app=load("res://main.tscn").instantiate(); root.add_child(app); current_scene=app; await settle()
  check(app.result.text.is_empty(),"empty history shows no result text")
  app.data.settings.duration=1.0; app.data.settings.sound=false
  app._spin(); await create_timer(1.2).timeout; await settle()
@@ -30,7 +30,7 @@ func run() -> void:
  check_result(app,winner)
  check(Model.load_data().presets[0].history.back().name==winner,"winner persisted")
  app.queue_free(); await settle()
- app=load("res://main.tscn").instantiate(); root.add_child(app); await settle()
+ app=load("res://main.tscn").instantiate(); root.add_child(app); current_scene=app; await settle()
  check_result(app,winner)
  var long_name: String="긴당첨항목이름".repeat(6)
  app.preset.history.append({"name":long_name,"color":"#ffffff","at":"test"})

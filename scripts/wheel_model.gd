@@ -7,7 +7,17 @@ const MAX_SLICES := 200
 const TAU_VALUE := PI * 2.0
 
 static func default_data() -> Dictionary:
-	return {"version": 1, "settings": {"duration": 6.0, "remove_winner": false, "sound": true}, "last_preset_id": "default", "presets": [{"id": "default", "name": "오늘의 작은 즐거움", "mode": "ratio", "slices": [{"id": "default_1", "name": "커피 한 잔", "color": "#a89bea", "weight": 1.0}, {"id": "default_2", "name": "가벼운 산책", "color": "#ffcc75", "weight": 1.0}, {"id": "default_3", "name": "좋아하는 음악", "color": "#7ad3b9", "weight": 1.0}, {"id": "default_4", "name": "달콤한 간식", "color": "#f69ca9", "weight": 1.0}], "duration_override": null, "remove_override": null, "history": [], "remaining_ids": ["default_1", "default_2", "default_3", "default_4"]}]}
+	return {"version": 1, "settings": {"duration": 6.0, "remove_winner": false, "sound": true}, "last_preset_id": "default", "presets": [{"id": "default", "name": "오늘의 작은 즐거움", "favorite": false, "mode": "ratio", "slices": [{"id": "default_1", "name": "커피 한 잔", "color": "#a89bea", "weight": 1.0}, {"id": "default_2", "name": "가벼운 산책", "color": "#ffcc75", "weight": 1.0}, {"id": "default_3", "name": "좋아하는 음악", "color": "#7ad3b9", "weight": 1.0}, {"id": "default_4", "name": "달콤한 간식", "color": "#f69ca9", "weight": 1.0}], "duration_override": null, "remove_override": null, "history": [], "remaining_ids": ["default_1", "default_2", "default_3", "default_4"]}]}
+
+static func move_entry(entries: Array, from: int, to: int) -> bool:
+	# `to` is the final index; move references without cloning or sorting.
+	if from < 0 or from >= entries.size() or to < 0 or to >= entries.size():
+		return false
+	if from == to:
+		return true
+	var entry: Variant = entries.pop_at(from)
+	entries.insert(to, entry)
+	return true
 
 static func _number(value: Variant) -> bool:
 	return (value is float or value is int) and is_finite(float(value))
@@ -129,7 +139,7 @@ static func _sanitize(raw: Variant) -> Dictionary:
 		if not _storage_valid(value):
 			return {}
 		preset_ids[value.id] = true
-		var preset := {"id": value.id, "name": value.name, "mode": value.mode, "slices": [], "duration_override": value.get("duration_override", null), "remove_override": value.get("remove_override", null), "history": [], "remaining_ids": []}
+		var preset := {"id": value.id, "name": value.name, "favorite": value.get("favorite", false) if value.get("favorite", false) is bool else false, "mode": value.mode, "slices": [], "duration_override": value.get("duration_override", null), "remove_override": value.get("remove_override", null), "history": [], "remaining_ids": []}
 		var slice_ids: Array = []
 		for slice: Dictionary in value.slices:
 			preset.slices.append({"id": slice.id, "name": slice.name, "color": slice.color, "weight": float(slice.weight)})

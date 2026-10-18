@@ -2,6 +2,7 @@ extends Control
 
 var slices: Array = []
 var font: Font
+var show_labels := true
 
 func _ready() -> void:
  mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -32,7 +33,7 @@ func _draw() -> void:
   var label: String = s.name
   if label.length() > 10: label = label.left(9) + "…"
   var fs := clampi(int(r * .073), 12, 23)
-  if sweep * r > 28:
+  if show_labels and sweep * r > 28:
    var pos := c + Vector2.from_angle(angle) * r * .64
    var text_size := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
    draw_string(font, pos - Vector2(text_size.x / 2, -fs * .34), label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, _label_color(Color(s.color)))

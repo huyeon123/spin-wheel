@@ -17,7 +17,7 @@ func fields(node: Node) -> Array:
   found.append_array(fields(child))
  return found
 func run() -> void:
- var app=load("res://main.tscn").instantiate();root.add_child(app);await settle()
+ var app=load("res://main.tscn").instantiate();root.add_child(app); current_scene=app;await settle()
  var slice: Dictionary=app.preset.slices[0]
  for mode in ["ratio","percent"]:
   for invalid in ["1.5","0","-1","abc","","1e2","999999999999999999999999"]:
@@ -33,6 +33,15 @@ func run() -> void:
  app._close_editor();await settle()
  check(slice.weight==100000.5,"open and close preserves legacy fraction")
  app.preset.slices.resize(3)
+ app._refresh_editor()
+ var radios: Array=app.editor.find_children("*","CheckBox",true,false)
+ check(radios.size()==2 and radios[0].button_group==radios[1].button_group,"exactly two mutually exclusive mode radios")
+ app._preset_manager();await settle()
+ var add_found:=false
+ for b in app.manager_dialog.find_children("*","Button",true,false):
+  if b.text=="추가":add_found=true
+ check(add_found,"preset manager add label is exactly 추가")
+ app._close_top_layer();await settle()
  app.preset.mode="ratio";app._equalize()
  check(app.preset.slices.all(func(s):return s.weight==1.0),"ratio equalize assigns one each")
  app.preset.mode="percent";app._equalize()
@@ -40,9 +49,13 @@ func run() -> void:
  check(app._integer_percent_weights(app.preset.slices)==[34,33,33],"existing integer distribution stable")
  app.preset.mode="ratio"
  for s in app.preset.slices:s.weight=1.0
+ app.preset.slices[0].weight=15.0
  app._change_mode(1);await settle()
- check(app.preset.mode=="percent" and app.preset.slices.map(func(s):return s.weight)==[34.0,33.0,33.0],"equal ratio conversion produces integer100total")
- app._close_top_layer();await settle()
+ check(app.preset.mode=="percent" and app.preset.slices.map(func(s):return s.weight)==[34.0,33.0,33.0],"mode switch resets unequal weights to34/33/33")
+ app._change_mode(0);await settle()
+ check(app.preset.slices.all(func(s):return s.weight==1.0),"switch back to ratio resets all weights to one")
+ app._change_mode(1);await settle()
+ check(not app._has_layer(),"mode switch equalizes without conversion confirmation")
  app._add_slice()
  check(app.spin_button.disabled,"percent add with101total disables spin")
  app._equalize()

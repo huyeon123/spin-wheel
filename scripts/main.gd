@@ -1,6 +1,8 @@
 extends Control
 
 const Model = preload("res://scripts/wheel_model.gd")
+const Reorder = preload("res://scripts/reorder_handle.gd")
+const Layer = preload("res://scripts/wheel_layer.gd")
 const Select = preload("res://scripts/wheel_select.gd")
 const Wheel = preload("res://scripts/wheel_canvas.gd")
 const PALETTE = ["#a89bea", "#ffcc75", "#7ad3b9", "#f69ca9", "#83b9ed", "#d8b1df", "#a8d584", "#f4b18c"]
@@ -24,9 +26,10 @@ var tween: Tween
 var rng := RandomNumberGenerator.new()
 var dirty := false
 var save_timer: Timer
-var history_dialog: AcceptDialog
+var history_dialog: Control
 var narrow := false
-var editor_dialog: AcceptDialog
+var editor_dialog: Control
+var manager_dialog: Control
 var main_selector: Button
 var dragging := false
 var drag_pointer := -2
@@ -73,9 +76,16 @@ func _ready() -> void:
   await get_tree().process_frame
   await get_tree().process_frame
   if "--editor-shot" in OS.get_cmdline_user_args(): _open_editor()
+  if "--settings-shot" in OS.get_cmdline_user_args(): _settings()
+  if "--color-shot" in OS.get_cmdline_user_args(): _pick_color(preset.slices[0])
+  if "--history-shot" in OS.get_cmdline_user_args(): _history()
   if "--result-shot" in OS.get_cmdline_user_args():
    preset.duration_override = 1.0; data.settings.sound = false; _spin(); await tween.finished
-  if "--selector-shot" in OS.get_cmdline_user_args(): main_selector.open_choices()
+  if "--selector-shot" in OS.get_cmdline_user_args():
+   preset.favorite = true
+   for name in ["점심 메뉴", "주말에 할 일"]:
+    var sample: Dictionary = Model.default_data().presets[0].duplicate(true); sample.id = _id(); sample.name = name; data.presets.append(sample)
+   _preset_manager()
   await get_tree().create_timer(1.5).timeout
   get_viewport().get_texture().get_image().save_png("res://build/screenshot.png")
   get_tree().quit()
@@ -94,22 +104,24 @@ func _theme() -> void:
  var t := Theme.new()
  t.default_font = font
  t.default_font_size = 16
- t.set_color("font_color", "Label", Color("263352"))
+ t.set_color("font_placeholder_color", "LineEdit", Color("747b74"))
+ t.set_color("caret_color", "LineEdit", Color("29302c"))
+ t.set_color("font_color", "Label", Color("29302c"))
  for cls in ["Button", "OptionButton", "LineEdit", "SpinBox", "CheckButton", "CheckBox"]:
-  t.set_color("font_color", cls, Color("263352"))
-  t.set_color("font_hover_color", cls, Color("5340ae"))
-  t.set_color("font_focus_color", cls, Color("263352"))
-  t.set_color("font_pressed_color", cls, Color("263352"))
-  t.set_color("font_disabled_color", cls, Color("9a98a9"))
+  t.set_color("font_color", cls, Color("29302c"))
+  t.set_color("font_hover_color", cls, Color("46594b"))
+  t.set_color("font_focus_color", cls, Color("29302c"))
+  t.set_color("font_pressed_color", cls, Color("29302c"))
+  t.set_color("font_disabled_color", cls, Color("939990"))
  for state in ["normal", "hover", "pressed", "focus", "disabled"]:
   var s := StyleBoxFlat.new()
-  s.bg_color = Color(1,1,1,.88) if state == "normal" else Color("e8e0ff")
-  if state == "disabled": s.bg_color = Color("e8eaf0")
-  s.set_corner_radius_all(22)
+  s.bg_color = Color("f6f6f4") if state == "normal" else Color("e9ebe8")
+  if state == "disabled": s.bg_color = Color("eceeea")
+  s.set_corner_radius_all(12)
   s.content_margin_left = 16; s.content_margin_right = 16
   s.content_margin_top = 11; s.content_margin_bottom = 11
-  s.border_color = Color("dedfed")
-  s.set_border_width_all(0)
+  s.border_color = Color("d9dcd6")
+  s.set_border_width_all(1)
   t.set_stylebox(state, "Button", s)
   t.set_stylebox(state, "OptionButton", s)
   t.set_stylebox(state, "LineEdit", s)
@@ -119,13 +131,6 @@ func _theme() -> void:
  panel.content_margin_left = 24; panel.content_margin_right = 24
  panel.content_margin_top = 24; panel.content_margin_bottom = 24
  t.set_stylebox("panel", "PanelContainer", panel)
- var dialog_panel := panel.duplicate() as StyleBoxFlat; dialog_panel.corner_radius_top_left = 0; dialog_panel.corner_radius_top_right = 0; dialog_panel.corner_radius_bottom_left = 20; dialog_panel.corner_radius_bottom_right = 20
- t.set_stylebox("panel", "AcceptDialog", dialog_panel)
- var border := StyleBoxFlat.new(); border.bg_color = Color.WHITE; border.border_color = Color.WHITE; border.set_border_width_all(0); border.border_width_top = 36; border.expand_margin_top = 36; border.set_corner_radius_all(20)
- t.set_stylebox("embedded_border", "Window", border)
- t.set_constant("title_height", "Window", 36); t.set_font_size("title_font_size", "Window", 16)
- t.set_color("title_color", "Window", Color("3d3457"))
- t.set_icon("close", "Window", load("res://assets/close.svg")); t.set_icon("close_pressed", "Window", load("res://assets/close.svg"))
  theme = t
 
 func _label(text: String, fs := 16) -> Label:
@@ -133,7 +138,7 @@ func _label(text: String, fs := 16) -> Label:
  return l
 
 func _button(text: String, action: Callable) -> Button:
- var b := Button.new(); b.text = text; b.pressed.connect(action); b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+ var b := Button.new(); b.text = text; b.pressed.connect(func(): action.call_deferred()); b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
  b.custom_minimum_size.y = 46
  return b
 
@@ -159,8 +164,7 @@ func _build() -> void:
  var header := _row(); outer.add_child(header)
  var left_spacer := Control.new(); left_spacer.custom_minimum_size.x = 48; header.add_child(left_spacer)
  var center := CenterContainer.new(); center.size_flags_horizontal = Control.SIZE_EXPAND_FILL; header.add_child(center)
- main_selector = Select.new(); main_selector.fit_to_longest_item = false; main_selector.clip_text = true; main_selector.custom_minimum_size.x = 220; main_selector.tooltip_text = "프리셋 전환"; center.add_child(main_selector)
- main_selector.item_selected.connect(_select_preset)
+ main_selector = _button("", _preset_manager); main_selector.clip_text = true; main_selector.custom_minimum_size.x = 220; main_selector.tooltip_text = "프리셋 관리"; main_selector.accessibility_name = "프리셋 관리"; center.add_child(main_selector)
  var gear := _button("", _settings_hub); gear.icon = load("res://assets/settings.svg"); gear.custom_minimum_size = Vector2(48,48); gear.tooltip_text = "설정"; header.add_child(gear)
  for property in gear.get_property_list():
   if property.name == "accessibility_name": gear.set("accessibility_name", "설정")
@@ -179,25 +183,26 @@ func _build() -> void:
  var wheel_holder := Control.new(); aspect.add_child(wheel_holder)
  wheel = Wheel.new(); wheel.font = font; wheel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); wheel_holder.add_child(wheel)
  var pointer := TextureRect.new(); pointer.texture = load("res://assets/pointer.svg"); pointer.mouse_filter = Control.MOUSE_FILTER_IGNORE; pointer.expand_mode = TextureRect.EXPAND_IGNORE_SIZE; pointer.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED; pointer.anchor_left = .5; pointer.anchor_right = .5; pointer.offset_left = -16; pointer.offset_right = 16; pointer.offset_top = -2; pointer.offset_bottom = 30; wheel_holder.add_child(pointer)
- spin_button = _button("▶", _spin); spin_button.tooltip_text = "돌리기 (Space)"; spin_button.custom_minimum_size = Vector2(56,48); spin_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER; spin_button.add_theme_font_size_override("font_size", 21)
- spin_button.modulate = Color("d9ded8"); spin_button.custom_minimum_size = Vector2(64,56)
+ spin_button = _button("돌리기", _spin); spin_button.tooltip_text = "돌리기 (Space)"; spin_button.custom_minimum_size = Vector2(56,48); spin_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER; spin_button.add_theme_font_size_override("font_size", 21)
+ spin_button.custom_minimum_size = Vector2(360,56); _accent_button(spin_button)
  status = _label("", 14); status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; stage_box.add_child(status)
  duration_label = _label("", 13); duration_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; stage_box.add_child(duration_label); duration_label.hide()
- var controls := _row(); controls.alignment = BoxContainer.ALIGNMENT_CENTER; stage_box.add_child(controls)
+ stage_box.add_child(spin_button)
+ var action_gap := Control.new(); action_gap.custom_minimum_size.y = 16; stage_box.add_child(action_gap)
+ var controls := _row(); controls.add_theme_constant_override("separation",28); controls.alignment = BoxContainer.ALIGNMENT_CENTER; stage_box.add_child(controls)
  controls.add_child(_icon_button("res://assets/restart.svg", "라운드 복원", _reset_round))
- controls.add_child(spin_button)
+ controls.add_child(_icon_button("res://assets/edit.svg", "룰렛 편집", _open_editor))
  controls.add_child(_icon_button("res://assets/history.svg", "결과 기록", _history))
- scrim = ColorRect.new(); scrim.color = Color(0.10,0.12,0.20,0.38); scrim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); scrim.mouse_filter = Control.MOUSE_FILTER_STOP; add_child(scrim); scrim.hide()
- editor_dialog = AcceptDialog.new(); editor_dialog.theme = theme; editor_dialog.title = "칸 편집 · 프리셋 관리"; editor_dialog.ok_button_text = "닫기"; editor_dialog.exclusive = true; add_child(editor_dialog)
+ editor_dialog = Layer.new(); editor_dialog.theme = theme; editor_dialog.title = "룰렛 편집"; editor_dialog.show_footer = false; editor_dialog.ok_button_text = "닫기"; editor_dialog.exclusive = true; add_child(editor_dialog)
  editor_dialog.confirmed.connect(_close_editor); editor_dialog.canceled.connect(_close_editor)
- var edit_scroll := ScrollContainer.new(); edit_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED; edit_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER; edit_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL; editor_dialog.add_child(edit_scroll)
- editor = VBoxContainer.new(); editor.size_flags_horizontal = Control.SIZE_EXPAND_FILL; editor.add_theme_constant_override("separation", 13); edit_scroll.add_child(editor)
+ editor = VBoxContainer.new(); editor.size_flags_horizontal = Control.SIZE_EXPAND_FILL; editor.add_theme_constant_override("separation", 16); editor_dialog.add_content(editor)
  _refresh_editor(); _refresh_wheel(); _refresh_result()
  editor_dialog.hide()
 
 func _responsive() -> void:
  if body == null: return
  main_selector.custom_minimum_size.x = clampf(size.x - 180, 180, 440)
+ spin_button.custom_minimum_size.x = minf(360, size.x - 80)
  narrow = size.x < 880
  body.columns = 1
  wheel_aspect.custom_minimum_size.y = 400 if narrow else 430
@@ -206,28 +211,19 @@ func _responsive() -> void:
  if editor_dialog.visible: _size_editor()
 
 func _size_editor() -> void:
- var available := get_viewport_rect().size
- var target := Vector2i(mini(560, int(available.x) - 32), mini(620, int(available.y) - 48))
- var scroll := editor_dialog.get_child(0) as ScrollContainer
- # The content scrolls; a long preset never increases the overlay beyond screen.
- if scroll == null:
-  for child in editor_dialog.get_children():
-   if child is ScrollContainer: scroll = child; break
- if scroll != null: scroll.custom_minimum_size = Vector2(target.x - 24, target.y - 90)
- editor_dialog.size = target
- editor_dialog.position = Vector2i((available - Vector2(target)) / 2)
+ editor_dialog.layout_card(Vector2i(560, 660))
 
 func _open_editor() -> void:
  if busy: return
  editor_opener = get_viewport().gui_get_focus_owner()
  _refresh_editor()
  _size_editor()
- editor_dialog.popup_centered(editor_dialog.size)
+ editor_dialog.popup_centered(Vector2i(560, 660))
 
 func _close_editor() -> void:
  _commit_inputs(editor)
  editor_dialog.hide()
- if is_instance_valid(editor_opener): editor_opener.grab_focus()
+ if is_instance_valid(editor_opener) and editor_opener.is_inside_tree(): editor_opener.grab_focus.call_deferred()
  _save()
  _refresh_wheel()
 
@@ -237,9 +233,7 @@ func _select_preset(i: int) -> void:
  _refresh_editor(); _refresh_wheel(); _refresh_result()
 
 func _refresh_picker() -> void:
- main_selector.clear()
- for p in data.presets: main_selector.add_item(p.name)
- main_selector.select(data.presets.find(preset))
+ main_selector.text = str(preset.name)
  main_selector.disabled = busy
 
 func _refresh_result() -> void:
@@ -250,41 +244,40 @@ func _refresh_result() -> void:
 func _refresh_editor() -> void:
  _refresh_picker()
  for child in editor.get_children(): child.queue_free(); editor.remove_child(child)
- editor.add_child(_label("나의 룰렛", 22))
- var pr := _row(); editor.add_child(pr)
- selectors = Select.new(); selectors.fit_to_longest_item = false; selectors.clip_text = true; selectors.size_flags_horizontal = Control.SIZE_EXPAND_FILL
- for p in data.presets: selectors.add_item(p.name)
- selectors.select(data.presets.find(preset)); selectors.disabled = busy
- selectors.item_selected.connect(_select_preset)
- pr.add_child(selectors)
- var new_button := _button("+ 새로", _new_preset); new_button.disabled = busy or data.presets.size() >= Model.MAX_PRESETS; pr.add_child(new_button)
- var name_input := LineEdit.new(); name_input.text = preset.name; name_input.placeholder_text = "룰렛 이름"; name_input.max_length = 40; name_input.editable = not busy
- name_input.text_changed.connect(func(value): preset.name = value; preset_name.text = value; selectors.set_item_text(data.presets.find(preset),value); _refresh_picker(); _changed())
+ selectors = main_selector
+ editor.add_child(_label("이름", 13))
+ var name_input := LineEdit.new(); name_input.context_menu_enabled = false; name_input.text = preset.name; name_input.placeholder_text = "룰렛 이름"; name_input.max_length = 40; name_input.editable = not busy
+ name_input.text_changed.connect(func(value): preset.name = value; preset_name.text = value; _refresh_picker(); _changed())
  editor.add_child(name_input)
- var mode := Select.new(); mode.add_item("비율로 정하기 · 1 : 1"); mode.add_item("백분율로 정하기 · 50 : 50"); mode.select(0 if preset.mode == "ratio" else 1); mode.disabled = busy
- mode.item_selected.connect(_change_mode); editor.add_child(mode)
- var equalize := _button("균등 분배", _equalize); equalize.disabled = busy; editor.add_child(equalize)
+ var modes := _row(); editor.add_child(modes)
+ var group := ButtonGroup.new()
+ for i in range(2):
+  var radio := CheckBox.new(); radio.text = "비율로 정하기" if i == 0 else "백분율로 정하기"; radio.button_group = group; radio.button_pressed = (preset.mode == "ratio") == (i == 0); radio.disabled = busy
+  radio.add_theme_icon_override("radio_checked",load("res://assets/radio-on.svg")); radio.add_theme_icon_override("radio_unchecked",load("res://assets/radio-off.svg"))
+  radio.size_flags_horizontal = Control.SIZE_EXPAND_FILL; radio.custom_minimum_size.y = 44; modes.add_child(radio)
+  if radio.button_pressed: _accent_button(radio, true)
+  radio.pressed.connect(func(): _change_mode.call_deferred(i))
+ var equalize := _button("균등 분배", _equalize); equalize.size_flags_horizontal = Control.SIZE_SHRINK_END; equalize.custom_minimum_size.x = 160; equalize.disabled = busy; editor.add_child(equalize)
  var has_fraction := false
  for slice in preset.slices: has_fraction = has_fraction or float(slice.weight) != floorf(float(slice.weight))
  if has_fraction:
   var legacy := _label("이전 소수 값 유지 중 · 균등 분배 또는 정수 수정으로 변경",12); legacy.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; editor.add_child(legacy)
  var note := _label("이름 · 색상 · 정수 가중치", 13); note.add_theme_color_override("font_color", Color("7f879d")); editor.add_child(note)
  for i in range(preset.slices.size()): _slice_row(i)
- var plus := _button("+ 항목 추가", _add_slice); plus.disabled = busy or preset.slices.size() >= 40; editor.add_child(plus)
+ var plus := _button("항목 추가", _add_slice); _accent_button(plus); plus.disabled = busy or preset.slices.size() >= 40; editor.add_child(plus)
  var info := _label("편집 내용은 자동 저장됩니다.\n항목을 편집하면 현재 라운드가 복원됩니다.", 12); info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; info.add_theme_color_override("font_color", Color("81899b")); editor.add_child(info)
- var footer := _row(); editor.add_child(footer)
- footer.add_child(_button("이 룰렛 설정", _preset_settings))
- var del := _button("삭제", _delete_preset); del.disabled = busy or data.presets.size() <= 1; footer.add_child(del)
  _lock_buttons(editor, busy)
 
 func _slice_row(index: int) -> void:
  var s: Dictionary = preset.slices[index]
- var r := _row(); editor.add_child(r)
- var color := ColorPickerButton.new(); color.color = Color(s.color); color.custom_minimum_size = Vector2(42,44); color.edit_alpha = false; color.disabled = busy; r.add_child(color)
- color.color_changed.connect(func(c): s.color = "#" + c.to_html(false); _definition_changed())
- var name_edit := LineEdit.new(); name_edit.text = s.name; name_edit.max_length = 40; name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL; name_edit.custom_minimum_size.x = 70; name_edit.editable = not busy; r.add_child(name_edit)
+ var r := _row(); r.add_theme_constant_override("separation",8); r.set_meta("row_index",index); editor.add_child(r)
+ var handle := Reorder.new(); handle.disabled = busy; handle.caption = str(s.name); handle.swatch_color = Color(s.color); r.add_child(handle); handle.configure(editor, r, index, editor_dialog._scroll)
+ handle.reordered.connect(_reorder_slices)
+ var color := _button("", func(): _pick_color(s)); color.custom_minimum_size = Vector2(38,44); color.disabled = busy; color.tooltip_text = "칸 색상"; r.add_child(color)
+ var swatch := StyleBoxFlat.new(); swatch.bg_color = Color(s.color); swatch.set_corner_radius_all(12); color.add_theme_stylebox_override("normal",swatch); color.add_theme_stylebox_override("hover",swatch)
+ var name_edit := LineEdit.new(); name_edit.context_menu_enabled = false; name_edit.text = s.name; name_edit.max_length = 40; name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL; name_edit.custom_minimum_size.x = 70; name_edit.editable = not busy; r.add_child(name_edit)
  name_edit.text_changed.connect(func(value): s.name = value; _definition_changed())
- var weight := LineEdit.new(); weight.text = _weight_text(float(s.weight)); weight.custom_minimum_size.x = 98; weight.max_length = 24; weight.editable = not busy; weight.tooltip_text = "양의 정수 입력"; r.add_child(weight)
+ var weight := LineEdit.new(); weight.context_menu_enabled = false; weight.text = _weight_text(float(s.weight)); weight.custom_minimum_size.x = 70; weight.max_length = 24; weight.editable = not busy; weight.tooltip_text = "양의 정수 입력"; r.add_child(weight)
  weight.text_changed.connect(func(value):
   if _set_integer_weight(s, value, preset.mode): weight.remove_theme_color_override("font_color"); _definition_changed()
   else: weight.add_theme_color_override("font_color",Color("b03b3b")); weight.tooltip_text = "정수만 입력할 수 있습니다. 기존 값은 유지됩니다.")
@@ -292,7 +285,8 @@ func _slice_row(index: int) -> void:
 
  var remove := _button("×", func():
   preset.slices.remove_at(index); _definition_changed(); _refresh_editor())
- remove.custom_minimum_size.x = 42; remove.disabled = busy or preset.slices.size() <= 2; r.add_child(remove)
+ _danger_button(remove)
+ remove.custom_minimum_size.x = 38; remove.disabled = busy or preset.slices.size() <= 2; r.add_child(remove)
 
 func _lock_buttons(node: Node, locked: bool) -> void:
  if not locked: return
@@ -305,27 +299,10 @@ func _change_mode(index: int) -> void:
  if busy: return
  var target := "percent" if index == 1 else "ratio"
  if target == preset.mode: return
- var old_total := 0.0
- var fractional := false
- for s in preset.slices:
-  old_total += float(s.weight)
-  fractional = fractional or float(s.weight) != floorf(float(s.weight))
- var weights: Array = []
- if target == "percent" or fractional:
-  weights = _integer_percent_weights(preset.slices)
-  if weights.is_empty():
-   _message("정수 단위 변환", "양의 정수 백분율은 최대 100개 항목에만 적용할 수 있습니다."); _refresh_editor(); return
- else:
-  for s in preset.slices: weights.append(int(s.weight))
- var new_total := 0.0
- for w in weights: new_total += float(w)
- var changed := false
- for i in range(weights.size()):
-  changed = changed or absf(float(preset.slices[i].weight) / old_total - float(weights[i]) / new_total) > .00000001
-  preset.slices[i].weight = float(weights[i])
+ if target == "percent" and preset.slices.size() > 100:
+  _message("균등 분배", "양의 정수 백분율은 최대 100개 항목에만 분배할 수 있습니다."); _refresh_editor(); return
  preset.mode = target
- _definition_changed(); _refresh_editor()
- if changed: _message("정수 단위 변환", "정수 단위에 맞춰 확률을 가장 가까운 분배로 조정했습니다. 항목별 값을 확인해 주세요.")
+ _equalize()
 
 func _integer_percent_weights(slices: Array) -> Array:
  if slices.is_empty() or slices.size() > 100: return []
@@ -452,9 +429,8 @@ func _delete_preset() -> void:
 
 func _settings() -> void:
  if busy: return
- var dialog := AcceptDialog.new(); dialog.theme = theme; dialog.title = "전체 설정"; dialog.ok_button_text = "닫기"; dialog.min_size = Vector2i(320,270); add_child(dialog)
- var box := VBoxContainer.new(); box.add_theme_constant_override("separation",12); dialog.add_child(box)
- box.add_child(_label("모든 룰렛의 기본 설정",20))
+ var dialog := Layer.new(); dialog.theme = theme; dialog.title = "전체 설정"; dialog.ok_button_text = "닫기"; dialog.min_size = Vector2i(320,270); add_child(dialog)
+ var box := VBoxContainer.new(); box.add_theme_constant_override("separation",12); dialog.add_content(box)
  box.add_child(_label("변경 내용은 자동 저장됩니다.",12))
  box.add_child(_label("회전 시간 · 1–30초"))
  var seconds := SpinBox.new(); seconds.min_value = 1; seconds.max_value = 30; seconds.step = .5; seconds.value = data.settings.duration; seconds.suffix = "초"; box.add_child(seconds)
@@ -468,8 +444,8 @@ func _settings() -> void:
 func _preset_settings() -> void:
  if busy: return
  if editor_dialog.visible: _close_editor()
- var dialog := AcceptDialog.new(); dialog.theme = theme; dialog.title = "이 룰렛 설정"; dialog.ok_button_text = "닫기"; dialog.min_size = Vector2i(320,260); add_child(dialog)
- var box := VBoxContainer.new(); box.add_theme_constant_override("separation",12); dialog.add_child(box)
+ var dialog := Layer.new(); dialog.theme = theme; dialog.title = "이 룰렛 설정"; dialog.ok_button_text = "닫기"; dialog.min_size = Vector2i(320,260); add_child(dialog)
+ var box := VBoxContainer.new(); box.add_theme_constant_override("separation",12); dialog.add_content(box)
  box.add_child(_label("변경 내용은 자동 저장됩니다.",12))
  var custom := CheckButton.new(); custom.text = "회전 시간 직접 설정"; custom.button_pressed = preset.duration_override != null; box.add_child(custom)
  var seconds := SpinBox.new(); seconds.min_value = 1; seconds.max_value = 30; seconds.step = .5; seconds.value = _duration(); seconds.suffix = "초"; seconds.editable = custom.button_pressed; box.add_child(seconds)
@@ -482,11 +458,10 @@ func _preset_settings() -> void:
 
 func _history(page: int = 0) -> void:
  if busy: return
- history_dialog = AcceptDialog.new(); history_dialog.theme = theme; history_dialog.exclusive = true; history_dialog.title = preset.name + " · 결과 기록"; history_dialog.min_size = Vector2i(320,350); add_child(history_dialog)
- var box := VBoxContainer.new(); history_dialog.add_child(box)
+ history_dialog = Layer.new(); history_dialog.theme = theme; history_dialog.exclusive = true; history_dialog.title = preset.name + " · 결과 기록"; history_dialog.min_size = Vector2i(320,350); add_child(history_dialog)
+ var box := VBoxContainer.new(); history_dialog.add_content(box)
  box.add_child(_label("총 %d회 · 최근 결과부터" % preset.history.size(),18))
- var scroll := ScrollContainer.new(); scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER; scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER; scroll.custom_minimum_size = Vector2(300,260); box.add_child(scroll)
- var list := VBoxContainer.new(); list.size_flags_horizontal = Control.SIZE_EXPAND_FILL; scroll.add_child(list)
+ var list := VBoxContainer.new(); list.size_flags_horizontal = Control.SIZE_EXPAND_FILL; box.add_child(list)
  if preset.history.is_empty(): list.add_child(_label("아직 결과가 없어요. 한 번 돌려볼까요?",13))
  var start: int = preset.history.size() - 1 - page * 100
  var end := maxi(-1, start - 100)
@@ -502,11 +477,11 @@ func _history(page: int = 0) -> void:
  history_dialog.confirmed.connect(history_dialog.queue_free); history_dialog.canceled.connect(history_dialog.queue_free); history_dialog.popup_centered()
 
 func _confirm(title_text: String, message: String, action: Callable) -> void:
- var d := ConfirmationDialog.new(); d.transparent_bg = true; d.theme = theme; d.exclusive = true; d.title = title_text; d.dialog_text = message; d.ok_button_text = "확인"; d.cancel_button_text = "취소"; _layer_parent().add_child(d)
- d.confirmed.connect(func(): action.call(); d.queue_free()); d.canceled.connect(d.queue_free); d.popup_centered()
+ var d := Layer.new(); d.transparent_bg = true; d.theme = theme; d.exclusive = true; d.title = title_text; d.dialog_text = message; d.ok_button_text = "확인"; d.cancel_button_text = "취소"; _layer_parent().add_child(d)
+ d.set_confirmation(); d.confirmed.connect(func(): action.call_deferred(); d.queue_free()); d.canceled.connect(d.queue_free); d.popup_centered()
 
 func _message(title_text: String, message: String) -> void:
- var d := AcceptDialog.new(); d.transparent_bg = true; d.theme = theme; d.exclusive = true; d.title = title_text; d.dialog_text = message; _layer_parent().add_child(d); d.confirmed.connect(d.queue_free); d.canceled.connect(d.queue_free); d.popup_centered()
+ var d := Layer.new(); d.transparent_bg = true; d.theme = theme; d.exclusive = true; d.title = title_text; d.dialog_text = message; _layer_parent().add_child(d); d.confirmed.connect(d.queue_free); d.canceled.connect(d.queue_free); d.popup_centered()
 
 func _sound(victory: bool) -> void:
  if not data.settings.sound: return
@@ -519,63 +494,56 @@ func _commit_inputs(node: Node) -> void:
   _commit_inputs(child)
 
 func _has_layer() -> bool:
- return _find_visible_window(self)
+ return _top_layer() != null
 
-func _find_visible_window(node: Node) -> bool:
- for child in node.get_children():
-  if child is Window:
-   if child.visible: return true
-  elif _find_visible_window(child): return true
- return false
+func _top_layer() -> Control:
+ var layers := get_tree().get_nodes_in_group("wheel_layers")
+ for i in range(layers.size() - 1, -1, -1):
+  if is_instance_valid(layers[i]) and layers[i].is_visible_in_tree(): return layers[i]
+ return null
 
 func _layer_parent() -> Node:
- for child in get_children():
-  if child is Window and child.visible: return child
  return self
 
-func _close_top_layer(node: Node = self) -> bool:
- var children := node.get_children()
- children.reverse()
- for child in children:
-  if child is Window and child.visible:
-   if _close_top_layer(child): return true
-   child.hide()
-   if child is AcceptDialog: child.canceled.emit()
-   else: child.close_requested.emit()
-   return true
-  elif not child is Window and _close_top_layer(child): return true
- return false
+func _close_top_layer(_node: Node = self) -> bool:
+ var layer := _top_layer()
+ if layer == null: return false
+ if _cancel_reorder(layer): return true
+ layer.request_close()
+ return true
 
-func _show_settings_layer(dialog: AcceptDialog) -> void:
- dialog.exclusive = true
- var opener := get_viewport().gui_get_focus_owner()
+func _show_settings_layer(dialog: Control) -> void:
  var close := func():
   _commit_inputs(dialog)
   _save()
   dialog.queue_free()
-  if is_instance_valid(opener): opener.grab_focus()
  dialog.confirmed.connect(close); dialog.canceled.connect(close)
  dialog.popup_centered()
 
-func _register_layer(node: Node) -> void:
- if node is Window:
-  node.transparent_bg = true
-  node.visibility_changed.connect(_sync_scrim)
-  node.tree_exiting.connect(func(): _sync_scrim.call_deferred())
+func _register_layer(_node: Node) -> void:
+ pass
 
 func _sync_scrim() -> void:
- if is_instance_valid(scrim): scrim.visible = _has_layer()
+ pass
+
+func _pick_color(slice: Dictionary) -> void:
+ var dialog := Layer.new(); dialog.title = "칸 색상"; add_child(dialog)
+ var picker := ColorPicker.new(); picker.color = Color(slice.color); picker.edit_alpha = false
+ picker.presets_visible = false; picker.sampler_visible = false; picker.color_modes_visible = false
+ dialog.add_content(picker)
+ picker.color_changed.connect(func(value): slice.color = "#" + value.to_html(false); _definition_changed())
+ var close := func(): _save(); dialog.queue_free(); _refresh_editor.call_deferred()
+ dialog.confirmed.connect(close); dialog.canceled.connect(close); dialog.popup_centered(Vector2i(460, 560))
 
 func _settings_hub() -> void:
  if busy: return
- var dialog := AcceptDialog.new(); dialog.theme = theme; dialog.title = "설정"; dialog.ok_button_text = "닫기"; dialog.min_size = Vector2i(310,260); add_child(dialog)
- var box := VBoxContainer.new(); box.add_theme_constant_override("separation",12); dialog.add_child(box)
- box.add_child(_button("칸 편집 · 프리셋 관리", func(): _switch_layer(dialog, _open_editor)))
+ var dialog := Layer.new(); dialog.theme = theme; dialog.title = "설정"; dialog.ok_button_text = "닫기"; dialog.min_size = Vector2i(310,260); add_child(dialog)
+ var box := VBoxContainer.new(); box.add_theme_constant_override("separation",12); dialog.add_content(box)
  box.add_child(_button("현재 룰렛 설정", func(): _switch_layer(dialog, _preset_settings)))
  box.add_child(_button("전체 설정", func(): _switch_layer(dialog, _settings)))
  _show_settings_layer(dialog)
 
-func _switch_layer(dialog: AcceptDialog, action: Callable) -> void:
+func _switch_layer(dialog: Control, action: Callable) -> void:
  dialog.hide(); dialog.queue_free(); action.call_deferred()
 
 func _animate_spin(t: float) -> void:
@@ -591,6 +559,9 @@ func _wheel_position(viewport_position: Vector2) -> Vector2:
 
 func _input(event: InputEvent) -> void:
  if wheel == null: return
+ if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
+  if _close_top_layer(): get_viewport().set_input_as_handled()
+  return
  if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE:
   if not busy and not _has_layer(): _spin(); get_viewport().set_input_as_handled()
   return
@@ -677,3 +648,117 @@ func _equalize() -> void:
 
 func _weight_text(value: float) -> String:
  return str(int(value)) if value == floorf(value) else str(value)
+
+func _accent_button(button: Button, soft := false) -> void:
+ var normal := StyleBoxFlat.new(); normal.bg_color = Color("e7f5f7") if soft else Color("087c8c"); normal.set_corner_radius_all(12); normal.set_content_margin_all(12)
+ normal.border_color = Color("82bec6"); normal.set_border_width_all(1 if soft else 0)
+ button.add_theme_stylebox_override("normal",normal)
+ var hover := normal.duplicate() as StyleBoxFlat; hover.bg_color = Color("d9eef1") if soft else Color("066979")
+ button.add_theme_stylebox_override("hover",hover); button.add_theme_stylebox_override("pressed",hover)
+ var focus := StyleBoxFlat.new(); focus.bg_color = Color(0,0,0,0); focus.border_color = Color("82bec6"); focus.set_border_width_all(2); focus.set_corner_radius_all(12); button.add_theme_stylebox_override("focus",focus)
+ for key in ["font_color","font_hover_color","font_pressed_color","font_focus_color"]: button.add_theme_color_override(key,Color("087c8c") if soft else Color.WHITE)
+
+func _danger_button(button: Button) -> void:
+ var style := StyleBoxFlat.new(); style.bg_color = Color("fff1f3"); style.border_color = Color("e7a5ae"); style.set_border_width_all(1); style.set_corner_radius_all(12); style.set_content_margin_all(10)
+ button.add_theme_stylebox_override("normal",style)
+ for key in ["font_color","font_hover_color","font_pressed_color","font_focus_color"]: button.add_theme_color_override(key,Color("b83243"))
+
+func _reorder_slices(from_index: int, to_index: int) -> void:
+ if busy or from_index == to_index: return
+ if Model.move_entry(preset.slices, from_index, to_index):
+  current_rotation = 0; wheel.rotation = 0; _refresh_wheel(); _refresh_editor(); _save(); _restore_reorder_focus.call_deferred(editor,to_index)
+
+func _reorder_presets(from_index: int, to_index: int) -> void:
+ if busy or from_index == to_index: return
+ if Model.move_entry(data.presets, from_index, to_index):
+  _save(); _refresh_manager(); _refresh_picker()
+  if is_instance_valid(manager_dialog): _restore_reorder_focus.call_deferred(manager_dialog.content,to_index)
+
+func _preset_manager() -> void:
+ if busy: return
+ if is_instance_valid(manager_dialog): manager_dialog.queue_free()
+ manager_dialog = Layer.new(); manager_dialog.title = "프리셋 관리"; manager_dialog.show_footer = false; add_child(manager_dialog)
+ manager_dialog.canceled.connect(manager_dialog.queue_free)
+ _refresh_manager(); manager_dialog.popup_centered(Vector2i(620,680))
+
+func _refresh_manager() -> void:
+ if not is_instance_valid(manager_dialog): return
+ for child in manager_dialog.content.get_children(): child.hide(); child.queue_free()
+ var list := VBoxContainer.new(); list.add_theme_constant_override("separation",14); manager_dialog.add_content(list)
+ var top := HBoxContainer.new(); top.alignment = BoxContainer.ALIGNMENT_END; list.add_child(top)
+ var add := _button("추가", _add_preset_dialog); _accent_button(add); add.disabled = data.presets.size() >= Model.MAX_PRESETS; top.add_child(add)
+ for i in range(data.presets.size()):
+  var p: Dictionary = data.presets[i]
+  var card := PanelContainer.new(); card.set_meta("row_index",i); list.add_child(card)
+  var style := StyleBoxFlat.new(); style.bg_color = Color("e7f5f7") if p.id == preset.id else Color("f7f8f5"); style.border_color = Color("82bec6") if p.id == preset.id else Color("d9ddd6"); style.set_border_width_all(1); style.set_corner_radius_all(16); style.set_content_margin_all(12); card.add_theme_stylebox_override("panel",style)
+  var row := _row(); row.add_theme_constant_override("separation",8); card.add_child(row)
+  var handle := Reorder.new(); handle.caption = str(p.name); row.add_child(handle); handle.configure(list,card,i,manager_dialog._scroll); handle.reordered.connect(_reorder_presets)
+  var preview := Wheel.new(); preview.show_labels = false; preview.slices = p.slices; preview.custom_minimum_size = Vector2(72,90); row.add_child(preview)
+  var details := VBoxContainer.new(); details.size_flags_horizontal = Control.SIZE_EXPAND_FILL; details.add_theme_constant_override("separation",12); row.add_child(details)
+  var heading := _row(); details.add_child(heading)
+  var name_label := _label(p.name,18); name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL; heading.add_child(name_label)
+  var star := _button("", func(): _toggle_favorite(p.id)); star.icon = load("res://assets/star-on.svg" if p.get("favorite",false) else "res://assets/star-off.svg"); star.custom_minimum_size = Vector2(40,40); star.tooltip_text = "즐겨찾기 해제" if p.get("favorite",false) else "즐겨찾기 추가"; heading.add_child(star); star.accessibility_name = star.tooltip_text + " · " + str(p.name)
+  var actions := _row(); actions.add_theme_constant_override("separation",6); details.add_child(actions)
+  var choose := _button("선택됨" if p.id == preset.id else "선택", func(): _manager_select(p.id)); choose.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+  if p.id == preset.id: _accent_button(choose)
+  actions.add_child(choose)
+  var edit := _button("룰렛 편집", func(): _manager_edit(p.id)); edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL; actions.add_child(edit)
+  var remove := _button("삭제",func(): _manager_delete(p.id)); _danger_button(remove); remove.disabled = data.presets.size() <= 1; actions.add_child(remove)
+
+func _find_preset(id: String) -> Dictionary:
+ for p in data.presets:
+  if p.id == id: return p
+ return {}
+
+func _toggle_favorite(id: String) -> void:
+ if busy: return
+ var p := _find_preset(id)
+ if p.is_empty(): return
+ p.favorite = not p.get("favorite",false)
+ _save(); _refresh_manager()
+
+func _manager_select(id: String) -> void:
+ if busy: return
+ var p := _find_preset(id)
+ if p.is_empty(): return
+ _select_preset(data.presets.find(p)); _refresh_manager()
+
+func _manager_edit(id: String) -> void:
+ if busy: return
+ _manager_select(id)
+ if is_instance_valid(manager_dialog): manager_dialog.hide(); manager_dialog.queue_free()
+ _open_editor()
+
+func _manager_delete(id: String) -> void:
+ if busy or data.presets.size() <= 1: return
+ var p := _find_preset(id)
+ if p.is_empty(): return
+ _confirm("프리셋 삭제", "‘%s’ 프리셋과 결과 기록을 삭제할까요?" % p.name,func():
+  data.presets.erase(p)
+  if preset.id == id: preset = data.presets[0]; current_rotation = 0; wheel.rotation = 0
+  _save(); _refresh_picker(); _refresh_editor(); _refresh_result(); _refresh_wheel(); _refresh_manager())
+
+func _add_preset_dialog() -> void:
+ if busy or data.presets.size() >= Model.MAX_PRESETS: return
+ var dialog := Layer.new(); dialog.title = "프리셋 추가"; dialog.ok_button_text = "추가"; dialog.set_confirmation(); add_child(dialog)
+ var name := LineEdit.new(); name.placeholder_text = "새 프리셋 이름"; name.max_length = 40; name.custom_minimum_size.y = 46; dialog.add_content(name)
+ dialog.get_ok_button().disabled = true
+ name.text_changed.connect(func(value): dialog.get_ok_button().disabled = value.strip_edges().is_empty())
+ dialog.confirmed.connect(func():
+  if not name.text.strip_edges().is_empty():
+   _new_preset(); preset.name = name.text.strip_edges(); _save(); _refresh_picker(); _refresh_editor(); _refresh_manager()
+  dialog.queue_free())
+ dialog.canceled.connect(dialog.queue_free); dialog.popup_centered(Vector2i(420,240))
+
+func _restore_reorder_focus(node: Node, target_index: int) -> void:
+ if not is_instance_valid(node) or not node.is_inside_tree(): return
+ if node is Reorder and node.index == target_index and node.is_visible_in_tree():
+  node.grab_focus(); return
+ for child in node.get_children(): _restore_reorder_focus(child,target_index)
+
+func _cancel_reorder(node: Node) -> bool:
+ if node is Reorder and node._pressed:
+  node._cancel(); return true
+ for child in node.get_children():
+  if _cancel_reorder(child): return true
+ return false
