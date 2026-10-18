@@ -1,5 +1,0 @@
-Native Godot framebuffer captures using real viewport pointer/button input.
-Columns: normal, hover, pressed, hover_pressed, focus, disabled.
-Rows: ratio selected style, percent selected style, ratio unselected style, percent unselected style, inheritance selected style, inheritance unselected style, custom-duration selected style, custom-duration unselected style, removal selected style, primary, neutral, danger.
-The fixture applies the actual production theme/helpers and radio icons. Every style is tested with selected=false and selected=true; the sheet shows selected=true. Each combination asserts both foreground/background contrast and actual contrasting text pixels. Actual live-app hover screenshots additionally cover selected ratio, percentage, inherited duration and custom duration.
-Tests: tests/test_button_states.gd. Requires native renderer, not --headless.

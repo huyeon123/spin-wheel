@@ -38,10 +38,6 @@ The Android package ID is `io.github.huyeon123.spinwheel`. Keep this ID stable a
 - [Godot Android export guide](https://docs.godotengine.org/en/4.6/tutorials/export/exporting_for_android.html)
 - [Godot command-line export](https://docs.godotengine.org/en/4.6/tutorials/editor/command_line_tutorial.html#exporting)
 
-## Validation performed in the development environment
-
-Both export commands completed successfully with official Godot 4.6.3 templates. The Windows output was inspected as PE32+ x86-64. Android APK signature verification passed (v2/v3), and its manifest and ARM64 library contents were inspected. This is build/package validation, not physical Windows or Android device testing. The GitHub Actions workflow is provided but has not been executed on GitHub.
-
 ### Exported-scene integrity gate (0.2.5+)
 
 Every build copies source into a fresh temporary staging directory without `.godot`, `build`, or Git data. It imports there and invalidates converted export resources separately for each platform. Build logs containing script/resource failures reject the build even if Godot returns success.
@@ -51,3 +47,9 @@ Before publishing, `verify_windows_assets.sh` loads the EXE's embedded pack with
 The locally delivered0.2.4 APK and0.2.5 update share this public signer-certificate SHA-256:
 `a30740b4b2f32490fbbe6d081f3a85db84859271d191b933ec57599eb9d5e8f1`
 Keep that signing identity for test updates. A CI-generated debug signer may differ: do not substitute a CI APK as an in-place update without comparing its public certificate. Signing material is never included in source or public releases.
+
+## Source publication policy
+
+Only paths listed in `.publication-allowlist` may be published as project source. Run `python3 scripts/check_publication.py` against the staged/tracked tree before pushing; CI checks the committed tree. Update this list deliberately when adding necessary source, app assets, automated tests or build documentation. Source ZIP/manifest generation must use this same list, not a recursive directory scan.
+
+QA captures, demo videos, execution reports, raw diagnostic results and application save data remain local under ignored output paths and are not source deliverables. Keep automated test code and small necessary fixtures. Run tests with isolated temporary user-data paths. Existing Git history and previously released APKs are retained.

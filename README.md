@@ -58,11 +58,7 @@ Windows / Android export와 GitHub Actions는 [빌드 안내](docs/BUILD.md)를 
 
 직접 작성한 소스와 생성한 효과음은 MIT ([LICENSE](LICENSE)). 번들 Noto Sans KR 서브셋은 SIL OFL이며 [폰트 라이선스](assets/FONT-LICENSE.txt)를 포함합니다. Godot 엔진은 MIT 라이선스: https://godotengine.org/license/.
 
-## 화면과 검증
-
-[데스크톱 화면](docs/screenshots/desktop.png) · [휴대폰 크기 화면](docs/screenshots/mobile.png) · [검증 기록](docs/QA.md)
-
-휴대폰 크기 화면은 Linux에서 창을 390×844로 조절해 렌더링한 것으로 Android 실기기 캡처가 아닙니다. [데스크톱 편집 레이어](docs/screenshots/desktop-editor.png) · [휴대폰 크기 편집 레이어](docs/screenshots/mobile-editor.png)
+## 개발 및 UI 구조
 
 현재 UI 제한은 룰렛 100개, 룰렛당 항목 40개이며 기록은 100건씩 탐색합니다.
 

@@ -1,5 +1,0 @@
-Actual production UI controls captured by the native Godot renderer after real viewport mouse input.
-Columns: normal, hover, pressed, keyboard focus, disabled.
-Rows: editor, preset manager, global settings, history, add preset, color picker, confirmation, message, main gear, restore round, edit wheel, history icon.
-The 248 assertions verify visible colored glyph pixels, constant glyph bounding box, centered close glyph within0.5px on each axis, unchanged control bounds/padding, and actual close-click dismissal on all eight modal types. Main icon disabled-state detection uses relative contrast because intentional alpha fading does not change geometry.
-Test: tests/test_close_icons.gd. Requires native renderer.

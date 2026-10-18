@@ -8,3 +8,14 @@ build/
 *.zip
 *.log
 .DS_Store
+
+# Local QA/diagnostic outputs and application state (never publish)
+docs/screenshots/
+docs/QA.md
+qa-output/
+diagnostics/
+reports/
+user_data/
+state.json
+state.json.*
+*.mp4

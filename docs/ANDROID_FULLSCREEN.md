@@ -36,11 +36,9 @@ Android classes, singletons and Java methods are dynamically guarded. Java excep
 
 If the bridge is absent or a sample fails, Godot cutout/keyboard measurements remain available through the corrected embedded-root transform. The fallback cannot guarantee all native navigation/IME information. A missing bridge logs one warning.
 
-## Validation and remaining device check
+## Reproducing regression coverage
 
-`test_android_insets.gd` adds 41 checks: actual embedded-root scaling, Java Boolean normalization, native/render size mismatch, render origin, native IME without an engine event, overlay/resized keyboard geometry, gesture/three-button navigation, mobile spacing, and actual focused editor-field visibility/restoration across three viewport sizes. The existing 137 mobile-layout checks also pass.
-
-These host tests exercise the actual Godot layout transform and modal code, but not Android JNI or Samsung's compositor. The user's Galaxy confirmed fullscreen in 0.2.9; the 0.2.10 layout/keyboard fixes still require their physical-device check. No physical Galaxy or working Android emulator was available for this change.
+Run `tests/test_android_insets.gd` and `tests/test_mobile_layout.gd` with isolated user-data directories, as configured in CI. These cover embedded-root scaling, Java Boolean normalization, native/render size mismatch, render origin, IME without an engine event, navigation insets and focused-field visibility. Host tests do not exercise Android JNI or a device compositor; verify keyboard and navigation behavior on the target device separately.
 
 ## Primary references
 
