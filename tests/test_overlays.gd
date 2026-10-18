@@ -49,7 +49,7 @@ func run() -> void:
  var hub: Control
  for child in app.get_children():
   if child.get_meta("is_layer",false) and child.visible and child!=app.editor_dialog: hub = child
- check(hub != null and hub.exclusive, "gear opens modal settings hub")
+ check(hub != null and hub.exclusive and hub.title=="전체 설정", "gear opens global settings directly")
  app._close_top_layer()
  await settle()
  opener.grab_focus()
@@ -117,7 +117,7 @@ func run() -> void:
  app._open_editor()
  app._preset_settings()
  await settle()
- check(not app.editor_dialog.visible and app._has_layer(), "preset settings replaces editor without stacking")
+ check(app.editor_dialog.visible and app._top_layer()==app.editor_dialog, "preset settings live inside editor")
  app._close_top_layer()
  await settle()
  app._change_mode(0)

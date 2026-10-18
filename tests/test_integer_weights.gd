@@ -34,7 +34,7 @@ func run() -> void:
  check(slice.weight==100000.5,"open and close preserves legacy fraction")
  app.preset.slices.resize(3)
  app._refresh_editor()
- var radios: Array=app.editor.find_children("*","CheckBox",true,false)
+ var radios: Array=app.editor.find_children("*","CheckBox",true,false).filter(func(r):return r.text in ["비율로 정하기","백분율로 정하기"])
  check(radios.size()==2 and radios[0].button_group==radios[1].button_group,"exactly two mutually exclusive mode radios")
  app._preset_manager();await settle()
  var add_found:=false

@@ -97,3 +97,12 @@ Final detail regression total: **10,252 checks passed** (10,165 model,22 UI,4 la
 - Real viewport-dispatched selection and reorder tests report no detached-viewport input errors. Hidden native context menus are disabled; focus trap includes internal SpinBox and color controls.
 - Twelve suites: **10,539 checks passed** (full run10,538 plus a new placeholder-color regression; modified manager/reorder/fixed-layer suites rerun after final visual fixes), no engine/script errors. Supplementary actual add/drag captures verified readable placeholders and separated insertion-line/ghost text.
 - Desktop and390×844 screenshots are actual Linux Godot rendering, not Windows/Android device captures. Windows runtime confirmation remains a subsequent user-PC step. Android0.2.0/versionCode6, unchanged package and signing path; no data migration deletes presets/history/settings.
+
+## Version 0.2.1 settings, history and drag continuity
+
+- Gear opens global settings directly. Preset duration and winner-removal overrides live at the bottom of the roulette editor, retaining nullable inheritance and existing saved values.
+- Desktop editor allows760 logical px; mobile stays inside its viewport. All delete-button states use compact8px padding, a44px target and10px safe right inset. Six viewport regressions cover glyph fit and field layout.
+- History rows prioritize winner names, show timestamps secondarily when present, and use color dots only for saved valid colors. Per-preset isolation,100-record pagination and confirmed reset are preserved; legacy records without timestamps remain renderable.
+- Removed ghost pinning to insertion markers. Independent actual editor/manager1px-pointer traces now show exactly1px ghost motion (previous maximum jumps57/64px), with no per-motion data mutation/rebuild. Grab offset remains fixed; marker draws behind the opaque ghost. Autoscroll does not move a stationary-pointer ghost.
+- Fifteen suites: **11,850 checks passed**, no engine/script errors. Final cosmetic changes passed83 additional checks in the four affected suites. Desktop/mobile global settings, editor top/bottom and history captures are Linux-rendered app views; history screenshots use isolated sample records, not user data.
+- Version0.2.1/Android versionCode7; package ID and local persistence paths unchanged. Windows user-PC launch and Android physical-device behavior are not claimed by cloud rendering.

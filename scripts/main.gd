@@ -104,6 +104,7 @@ func _theme() -> void:
  var t := Theme.new()
  t.default_font = font
  t.default_font_size = 16
+ t.set_icon("checked","CheckButton",load("res://assets/toggle-on.svg")); t.set_icon("unchecked","CheckButton",load("res://assets/toggle-off.svg"))
  t.set_color("font_placeholder_color", "LineEdit", Color("747b74"))
  t.set_color("caret_color", "LineEdit", Color("29302c"))
  t.set_color("font_color", "Label", Color("29302c"))
@@ -125,6 +126,9 @@ func _theme() -> void:
   t.set_stylebox(state, "Button", s)
   t.set_stylebox(state, "OptionButton", s)
   t.set_stylebox(state, "LineEdit", s)
+ t.set_stylebox("read_only", "LineEdit", t.get_stylebox("disabled","LineEdit"))
+ t.set_color("font_uneditable_color","LineEdit",Color("747d76"))
+ var divider := StyleBoxLine.new(); divider.color = Color("e3e7e2"); divider.thickness = 1; t.set_stylebox("separator","HSeparator",divider)
  var panel := StyleBoxFlat.new()
  panel.bg_color = Color.WHITE
  panel.set_corner_radius_all(28)
@@ -165,7 +169,7 @@ func _build() -> void:
  var left_spacer := Control.new(); left_spacer.custom_minimum_size.x = 48; header.add_child(left_spacer)
  var center := CenterContainer.new(); center.size_flags_horizontal = Control.SIZE_EXPAND_FILL; header.add_child(center)
  main_selector = _button("", _preset_manager); main_selector.clip_text = true; main_selector.custom_minimum_size.x = 220; main_selector.tooltip_text = "프리셋 관리"; main_selector.accessibility_name = "프리셋 관리"; center.add_child(main_selector)
- var gear := _button("", _settings_hub); gear.icon = load("res://assets/settings.svg"); gear.custom_minimum_size = Vector2(48,48); gear.tooltip_text = "설정"; header.add_child(gear)
+ var gear := _button("", _settings); gear.icon = load("res://assets/settings.svg"); gear.custom_minimum_size = Vector2(48,48); gear.tooltip_text = "설정"; header.add_child(gear)
  for property in gear.get_property_list():
   if property.name == "accessibility_name": gear.set("accessibility_name", "설정")
  var last := PanelContainer.new(); last.size_flags_horizontal = Control.SIZE_SHRINK_CENTER; last.custom_minimum_size.y = 48; var result_style := theme.get_stylebox("panel", "PanelContainer").duplicate() as StyleBoxFlat; result_style.content_margin_top = 14; result_style.content_margin_bottom = 14; last.add_theme_stylebox_override("panel", StyleBoxEmpty.new()); outer.add_child(last)
@@ -193,7 +197,7 @@ func _build() -> void:
  controls.add_child(_icon_button("res://assets/restart.svg", "라운드 복원", _reset_round))
  controls.add_child(_icon_button("res://assets/edit.svg", "룰렛 편집", _open_editor))
  controls.add_child(_icon_button("res://assets/history.svg", "결과 기록", _history))
- editor_dialog = Layer.new(); editor_dialog.theme = theme; editor_dialog.title = "룰렛 편집"; editor_dialog.show_footer = false; editor_dialog.ok_button_text = "닫기"; editor_dialog.exclusive = true; add_child(editor_dialog)
+ editor_dialog = Layer.new(); editor_dialog.theme = theme; editor_dialog.title = "룰렛 편집"; editor_dialog.max_width = 760; editor_dialog.show_footer = false; editor_dialog.ok_button_text = "닫기"; editor_dialog.exclusive = true; add_child(editor_dialog)
  editor_dialog.confirmed.connect(_close_editor); editor_dialog.canceled.connect(_close_editor)
  editor = VBoxContainer.new(); editor.size_flags_horizontal = Control.SIZE_EXPAND_FILL; editor.add_theme_constant_override("separation", 16); editor_dialog.add_content(editor)
  _refresh_editor(); _refresh_wheel(); _refresh_result()
@@ -211,14 +215,14 @@ func _responsive() -> void:
  if editor_dialog.visible: _size_editor()
 
 func _size_editor() -> void:
- editor_dialog.layout_card(Vector2i(560, 660))
+ editor_dialog.layout_card(Vector2i(760, 720))
 
 func _open_editor() -> void:
  if busy: return
  editor_opener = get_viewport().gui_get_focus_owner()
  _refresh_editor()
  _size_editor()
- editor_dialog.popup_centered(Vector2i(560, 660))
+ editor_dialog.popup_centered(Vector2i(760, 720))
 
 func _close_editor() -> void:
  _commit_inputs(editor)
@@ -266,6 +270,7 @@ func _refresh_editor() -> void:
  for i in range(preset.slices.size()): _slice_row(i)
  var plus := _button("항목 추가", _add_slice); _accent_button(plus); plus.disabled = busy or preset.slices.size() >= 40; editor.add_child(plus)
  var info := _label("편집 내용은 자동 저장됩니다.\n항목을 편집하면 현재 라운드가 복원됩니다.", 12); info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; info.add_theme_color_override("font_color", Color("81899b")); editor.add_child(info)
+ _editor_preset_settings(editor)
  _lock_buttons(editor, busy)
 
 func _slice_row(index: int) -> void:
@@ -286,7 +291,8 @@ func _slice_row(index: int) -> void:
  var remove := _button("×", func():
   preset.slices.remove_at(index); _definition_changed(); _refresh_editor())
  _danger_button(remove)
- remove.custom_minimum_size.x = 38; remove.disabled = busy or preset.slices.size() <= 2; r.add_child(remove)
+ remove.custom_minimum_size = Vector2(44,44); remove.disabled = busy or preset.slices.size() <= 2; r.add_child(remove)
+ var safe_inset := Control.new(); safe_inset.custom_minimum_size.x = 10; r.add_child(safe_inset)
 
 func _lock_buttons(node: Node, locked: bool) -> void:
  if not locked: return
@@ -429,7 +435,7 @@ func _delete_preset() -> void:
 
 func _settings() -> void:
  if busy: return
- var dialog := Layer.new(); dialog.theme = theme; dialog.title = "전체 설정"; dialog.ok_button_text = "닫기"; dialog.min_size = Vector2i(320,270); add_child(dialog)
+ var dialog := Layer.new(); dialog.theme = theme; dialog.title = "전체 설정"; dialog.ok_button_text = "닫기"; dialog.min_size = Vector2i(500,450); add_child(dialog)
  var box := VBoxContainer.new(); box.add_theme_constant_override("separation",12); dialog.add_content(box)
  box.add_child(_label("변경 내용은 자동 저장됩니다.",12))
  box.add_child(_label("회전 시간 · 1–30초"))
@@ -442,38 +448,72 @@ func _settings() -> void:
  _show_settings_layer(dialog)
 
 func _preset_settings() -> void:
- if busy: return
- if editor_dialog.visible: _close_editor()
- var dialog := Layer.new(); dialog.theme = theme; dialog.title = "이 룰렛 설정"; dialog.ok_button_text = "닫기"; dialog.min_size = Vector2i(320,260); add_child(dialog)
- var box := VBoxContainer.new(); box.add_theme_constant_override("separation",12); dialog.add_content(box)
- box.add_child(_label("변경 내용은 자동 저장됩니다.",12))
- var custom := CheckButton.new(); custom.text = "회전 시간 직접 설정"; custom.button_pressed = preset.duration_override != null; box.add_child(custom)
- var seconds := SpinBox.new(); seconds.min_value = 1; seconds.max_value = 30; seconds.step = .5; seconds.value = _duration(); seconds.suffix = "초"; seconds.editable = custom.button_pressed; box.add_child(seconds)
- custom.toggled.connect(func(v): preset.duration_override = seconds.value if v else null; seconds.editable = v; _changed(); _refresh_wheel())
+ _open_editor()
+ await get_tree().process_frame
+ await get_tree().process_frame
+ if editor_dialog.visible: editor_dialog._scroll.scroll_vertical = int(editor.get_combined_minimum_size().y)
+
+func _editor_preset_settings(box: VBoxContainer) -> void:
+ box.add_child(HSeparator.new())
+ box.add_child(_label("이 룰렛 설정",22))
+ box.add_child(_label("회전 시간",16))
+ var duration_group := ButtonGroup.new()
+ var inherit := CheckBox.new(); inherit.text = "전체 설정 사용 · %s초" % _weight_text(float(data.settings.duration)); inherit.button_group = duration_group; inherit.button_pressed = preset.duration_override == null; box.add_child(inherit)
+ var custom_row := _row(); box.add_child(custom_row)
+ var custom := CheckBox.new(); custom.text = "직접 설정"; custom.button_group = duration_group; custom.button_pressed = preset.duration_override != null; custom.size_flags_horizontal = Control.SIZE_EXPAND_FILL; custom_row.add_child(custom)
+ for radio in [inherit,custom]:
+  radio.custom_minimum_size.y = 44
+  _accent_button(radio,true) if radio.button_pressed else _clear_accent(radio)
+  radio.toggled.connect(func(on): _accent_button(radio,true) if on else _clear_accent(radio))
+  radio.add_theme_icon_override("radio_checked",load("res://assets/radio-on.svg")); radio.add_theme_icon_override("radio_unchecked",load("res://assets/radio-off.svg"))
+ var seconds := SpinBox.new(); seconds.min_value = 1; seconds.max_value = 30; seconds.step = .5; seconds.value = _duration(); seconds.suffix = "초"; seconds.editable = custom.button_pressed; seconds.custom_minimum_size.x = 120; custom_row.add_child(seconds)
+ inherit.pressed.connect(func(): preset.duration_override = null; seconds.editable = false; seconds.set_value_no_signal(float(data.settings.duration)); _changed(); _refresh_wheel())
+ custom.pressed.connect(func(): preset.duration_override = seconds.value; seconds.editable = true; _changed(); _refresh_wheel())
  seconds.value_changed.connect(func(v): if custom.button_pressed: preset.duration_override = v; _changed(); _refresh_wheel())
- box.add_child(_label("당첨 항목 처리"))
- var remove := Select.new(); remove.add_item("전체 설정 따르기"); remove.add_item("항상 유지"); remove.add_item("항상 제외"); remove.select(0 if preset.remove_override == null else (2 if preset.remove_override else 1)); box.add_child(remove)
- remove.item_selected.connect(func(i): preset.remove_override = null if i == 0 else i == 2; _changed(); _refresh_wheel())
- _show_settings_layer(dialog)
+ box.add_child(_label("당첨 항목 처리",16))
+ var remove_row := _row(); box.add_child(remove_row)
+ var remove_group := ButtonGroup.new()
+ for i in range(3):
+  var option := Button.new(); option.text = ["전체 설정 사용","유지","제외"][i]; option.toggle_mode = true; option.button_group = remove_group; option.size_flags_horizontal = Control.SIZE_EXPAND_FILL; option.custom_minimum_size.y = 44
+  option.button_pressed = (preset.remove_override == null and i == 0) or (preset.remove_override != null and i == (2 if preset.remove_override else 1)); remove_row.add_child(option)
+  if option.button_pressed: _accent_button(option,true)
+  option.pressed.connect(func():
+   preset.remove_override = null if i == 0 else i == 2; _changed(); _refresh_wheel()
+   for item in remove_row.get_children():
+    for state in ["normal","hover","pressed","focus"]: item.remove_theme_stylebox_override(state)
+    for color_key in ["font_color","font_hover_color","font_pressed_color","font_focus_color"]: item.remove_theme_color_override(color_key)
+    if item.button_pressed: _accent_button(item,true))
+ var hint := _label("전체 설정을 따르는 항목만 기본값과 함께 바뀝니다.",12); hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; box.add_child(hint)
 
 func _history(page: int = 0) -> void:
  if busy: return
- history_dialog = Layer.new(); history_dialog.theme = theme; history_dialog.exclusive = true; history_dialog.title = preset.name + " · 결과 기록"; history_dialog.min_size = Vector2i(320,350); add_child(history_dialog)
- var box := VBoxContainer.new(); history_dialog.add_content(box)
- box.add_child(_label("총 %d회 · 최근 결과부터" % preset.history.size(),18))
- var list := VBoxContainer.new(); list.size_flags_horizontal = Control.SIZE_EXPAND_FILL; box.add_child(list)
- if preset.history.is_empty(): list.add_child(_label("아직 결과가 없어요. 한 번 돌려볼까요?",13))
+ history_dialog = Layer.new(); history_dialog.theme = theme; history_dialog.exclusive = true; history_dialog.title = "결과 기록"; history_dialog.min_size = Vector2i(500,450); add_child(history_dialog)
+ var box := VBoxContainer.new(); box.add_theme_constant_override("separation",18); history_dialog.add_content(box)
+ var subtitle := _label(preset.name,16); subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; subtitle.add_theme_color_override("font_color",Color("737d78")); box.add_child(subtitle)
+ var list := VBoxContainer.new(); list.add_theme_constant_override("separation",14); list.size_flags_horizontal = Control.SIZE_EXPAND_FILL; box.add_child(list)
+ if preset.history.is_empty(): list.add_child(_label("아직 기록이 없습니다.",16))
+ page = clampi(page,0,maxi(0,(preset.history.size()-1)/100))
  var start: int = preset.history.size() - 1 - page * 100
  var end := maxi(-1, start - 100)
  for i in range(start, end, -1):
   var h: Dictionary = preset.history[i]
-  var l := _label("%d. %s\n%s" % [i+1,h.name,h.at],14); l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; list.add_child(l)
+  var row := _row(); row.add_theme_constant_override("separation",14); list.add_child(row)
+  if h.has("color") and Color.html_is_valid(str(h.color)):
+   var dot := Panel.new(); dot.custom_minimum_size = Vector2(12,12); dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+   var swatch := StyleBoxFlat.new(); swatch.bg_color = Color(h.color); swatch.set_corner_radius_all(6); dot.add_theme_stylebox_override("panel",swatch); row.add_child(dot)
+  var detail := VBoxContainer.new(); detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL; detail.add_theme_constant_override("separation",5); row.add_child(detail)
+  var winner_label := _label(str(h.name),22); winner_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; detail.add_child(winner_label)
+  if not str(h.get("at", "")).is_empty():
+   var timestamp := _label(str(h.at),13); timestamp.add_theme_color_override("font_color",Color("737d78")); detail.add_child(timestamp)
+  if i > end + 1: list.add_child(HSeparator.new())
  var paging := _row(); box.add_child(paging)
  if page > 0: paging.add_child(_button("최근 기록", func(): history_dialog.queue_free(); _history(page - 1)))
  if end >= 0: paging.add_child(_button("이전 기록", func(): history_dialog.queue_free(); _history(page + 1)))
- var reset := _button("이 룰렛의 기록 초기화", func():
+ var footer := _row(); box.add_child(footer)
+ var count := _label("%d개 기록" % preset.history.size(),14); count.size_flags_horizontal = Control.SIZE_EXPAND_FILL; footer.add_child(count)
+ var reset := _button("기록 초기화", func():
   _confirm("기록 초기화", "이 룰렛의 당첨 기록을 모두 지울까요? 되돌릴 수 없습니다.", func(): preset.history.clear(); _save(); _refresh_result(); history_dialog.queue_free()))
- reset.disabled = preset.history.is_empty(); box.add_child(reset)
+ _danger_button(reset); reset.disabled = preset.history.is_empty(); footer.add_child(reset)
  history_dialog.confirmed.connect(history_dialog.queue_free); history_dialog.canceled.connect(history_dialog.queue_free); history_dialog.popup_centered()
 
 func _confirm(title_text: String, message: String, action: Callable) -> void:
@@ -536,12 +576,7 @@ func _pick_color(slice: Dictionary) -> void:
  dialog.confirmed.connect(close); dialog.canceled.connect(close); dialog.popup_centered(Vector2i(460, 560))
 
 func _settings_hub() -> void:
- if busy: return
- var dialog := Layer.new(); dialog.theme = theme; dialog.title = "설정"; dialog.ok_button_text = "닫기"; dialog.min_size = Vector2i(310,260); add_child(dialog)
- var box := VBoxContainer.new(); box.add_theme_constant_override("separation",12); dialog.add_content(box)
- box.add_child(_button("현재 룰렛 설정", func(): _switch_layer(dialog, _preset_settings)))
- box.add_child(_button("전체 설정", func(): _switch_layer(dialog, _settings)))
- _show_settings_layer(dialog)
+ _settings()
 
 func _switch_layer(dialog: Control, action: Callable) -> void:
  dialog.hide(); dialog.queue_free(); action.call_deferred()
@@ -658,9 +693,17 @@ func _accent_button(button: Button, soft := false) -> void:
  var focus := StyleBoxFlat.new(); focus.bg_color = Color(0,0,0,0); focus.border_color = Color("82bec6"); focus.set_border_width_all(2); focus.set_corner_radius_all(12); button.add_theme_stylebox_override("focus",focus)
  for key in ["font_color","font_hover_color","font_pressed_color","font_focus_color"]: button.add_theme_color_override(key,Color("087c8c") if soft else Color.WHITE)
 
+func _clear_accent(button: Button) -> void:
+ for state in ["normal","hover","pressed","focus"]: button.remove_theme_stylebox_override(state)
+ for key in ["font_color","font_hover_color","font_pressed_color","font_focus_color"]: button.remove_theme_color_override(key)
+
 func _danger_button(button: Button) -> void:
- var style := StyleBoxFlat.new(); style.bg_color = Color("fff1f3"); style.border_color = Color("e7a5ae"); style.set_border_width_all(1); style.set_corner_radius_all(12); style.set_content_margin_all(10)
- button.add_theme_stylebox_override("normal",style)
+ var style := StyleBoxFlat.new(); style.bg_color = Color("fff1f3"); style.border_color = Color("e7a5ae"); style.set_border_width_all(1); style.set_corner_radius_all(12); style.set_content_margin_all(8)
+ for state in ["normal","hover","pressed","disabled"]:
+  var variant := style.duplicate() as StyleBoxFlat
+  if state in ["hover","pressed"]: variant.bg_color = Color("ffe3e7")
+  button.add_theme_stylebox_override(state,variant)
+ var focus := style.duplicate() as StyleBoxFlat; focus.bg_color = Color.TRANSPARENT; focus.set_border_width_all(2); button.add_theme_stylebox_override("focus",focus)
  for key in ["font_color","font_hover_color","font_pressed_color","font_focus_color"]: button.add_theme_color_override(key,Color("b83243"))
 
 func _reorder_slices(from_index: int, to_index: int) -> void:

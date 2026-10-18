@@ -26,6 +26,7 @@ var _dragging := false
 var _touch_index := -1
 var _press_position := Vector2.ZERO
 var _pointer := Vector2.ZERO
+var _ghost_grab_offset_y := 0.0
 var _target := -1
 var _visual_layer: CanvasLayer
 var _visual: DragVisual
@@ -41,18 +42,20 @@ class DragVisual extends Control:
 	var swatch_color := Color.TRANSPARENT
 	var caption_font: Font
 	func _draw() -> void:
+		# The marker belongs to the list, not the floating preview. Paint it behind
+		# the opaque ghost so crossing an insertion point never moves the preview.
+		draw_line(line_from, line_to, TEAL, 3.0, true)
+		draw_circle(line_from, 4.0, TEAL)
 		var shadow := StyleBoxFlat.new()
 		shadow.bg_color = Color(0.04, 0.14, 0.16, 0.10)
 		shadow.set_corner_radius_all(10)
 		draw_style_box(shadow, Rect2(ghost.position + Vector2(0, 3), ghost.size))
 		var style := StyleBoxFlat.new()
-		style.bg_color = Color(0.98, 0.99, 0.98, 0.96)
+		style.bg_color = Color(0.98, 0.99, 0.98, 1.0)
 		style.border_color = Color(TEAL, 0.65)
 		style.set_border_width_all(1)
 		style.set_corner_radius_all(10)
 		draw_style_box(style, ghost)
-		draw_line(line_from, line_to, TEAL, 3.0, true)
-		draw_circle(line_from, 4.0, TEAL)
 		var text_x := 12.0
 		if swatch_color.a > 0.0:
 			draw_circle(ghost.position + Vector2(20, ghost.size.y * 0.5), 7.0, swatch_color)
@@ -129,6 +132,10 @@ func _begin(position_in_viewport: Vector2, touch: int) -> void:
 	_touch_index = touch
 	_press_position = position_in_viewport
 	_pointer = position_in_viewport
+	var source_rect := _viewport_rect(row)
+	var ghost_height := minf(source_rect.size.y, 48.0)
+	var initial_ghost_y := source_rect.position.y + (source_rect.size.y - ghost_height) * 0.5
+	_ghost_grab_offset_y = clampf(position_in_viewport.y - initial_ghost_y, 0.0, ghost_height)
 	_target = index
 	_scroll_remainder = 0.0
 	set_process_input(true)
@@ -210,10 +217,9 @@ func _update_target() -> void:
 	_visual.line_from = Vector2(maxf(source_rect.position.x, area.position.x) + 3, line_y)
 	_visual.line_to = Vector2(minf(source_rect.end.x, area.end.x) - 3, line_y)
 	var ghost_height := minf(source_rect.size.y, 48.0)
-	_visual.ghost = Rect2(Vector2(source_rect.position.x, clampf(_pointer.y - ghost_height * 0.5, area.position.y, maxf(area.position.y, area.end.y - ghost_height))), Vector2(source_rect.size.x, ghost_height))
-	if line_y >= _visual.ghost.position.y - 5 and line_y <= _visual.ghost.end.y + 5:
-		var above := line_y - ghost_height - 10
-		_visual.ghost.position.y = above if above >= area.position.y else minf(area.end.y - ghost_height, line_y + 10)
+	# Preserve the press-time grab offset even at insertion boundaries and while
+	# autoscrolling. The insertion marker is independent and may sit behind us.
+	_visual.ghost = Rect2(Vector2(source_rect.position.x, _pointer.y - _ghost_grab_offset_y), Vector2(source_rect.size.x, ghost_height))
 	_visual.caption = caption if not caption.is_empty() else "%d → %d" % [index + 1, _target + 1]
 	_visual.queue_redraw()
 

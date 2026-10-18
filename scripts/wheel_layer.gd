@@ -23,6 +23,7 @@ var cancel_button_text := "취소":
  set(value):
   cancel_button_text = value
   if is_instance_valid(_cancel): _cancel.text = value
+var max_width := 560.0
 var min_size := Vector2i(400, 240)
 var exclusive := true
 var transparent_bg := true
@@ -201,7 +202,7 @@ func layout_card(target: Vector2i = Vector2i.ZERO) -> void:
  size = get_viewport_rect().size
  var available := Vector2(maxf(1, size.x - 32), maxf(1, size.y - 48))
  var requested := Vector2(_preferred if _preferred != Vector2i.ZERO else min_size)
- var width := minf(minf(560, available.x), maxf(320, requested.x))
+ var width := minf(minf(max_width, available.x), maxf(320, requested.x))
  # The scroll viewport never imposes its content's minimum height on the card.
  var chrome := 44.0 + 40.0 + 18.0
  if show_footer: chrome += 44.0 + 18.0

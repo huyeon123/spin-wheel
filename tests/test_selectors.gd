@@ -1,6 +1,7 @@
 extends SceneTree
-var failures:=0
+const Model=preload("res://scripts/wheel_model.gd")
 var checks:=0
+var failures:=0
 func _init()->void:
  if FileAccess.file_exists("user://state.json"):quit(2);return
  call_deferred("run")
@@ -9,39 +10,53 @@ func settle()->void:
 func check(ok:bool,label:String)->void:
  checks+=1
  if not ok:failures+=1;push_error(label)
-func find_select(node:Node)->Node:
- for child in node.get_children():
-  if child.get_script()==load("res://scripts/wheel_select.gd"):return child
-  var found=find_select(child)
-  if found!=null:return found
+func all(n:Node,type:String)->Array:
+ var a=[]
+ for c in n.get_children(true):
+  if c.is_class(type):a.append(c)
+  a.append_array(all(c,type))
+ return a
+func button(n:Node,text:String)->Button:
+ for b in all(n,"Button"):
+  if b.text==text:return b
  return null
+func press(b:Button)->void:
+ if b.toggle_mode:b.button_pressed=true
+ b.pressed.emit()
 func run()->void:
  root.size=Vector2i(480,800)
  var app=load("res://main.tscn").instantiate();root.add_child(app);current_scene=app;await settle()
- app._preset_settings();await settle()
- var parent_layer=app._top_layer()
- var select=find_select(parent_layer)
- check(select!=null,"override retains custom selector")
- select.open_choices();await settle()
- var drop=select.popup
- check(drop is Control and not drop is Window,"selector is in-app Control")
- check(drop.is_dropdown and not drop.show_footer,"compact dropdown without header or footer")
- check(absf(drop.card.size.x-select.size.x)<=1,"dropdown matches field width")
- check(drop.card.global_position.x>=0 and drop.card.get_global_rect().end.x<=app.size.x,"dropdown fits viewport")
- app._spin();check(not app.busy,"dropdown blocks spin")
- for down in [true,false]:
-  var e:=InputEventMouseButton.new();e.button_index=MOUSE_BUTTON_LEFT;e.pressed=down;e.position=Vector2(2,2);root.push_input(e,true)
- await settle()
- check(app._top_layer()==parent_layer,"outside mouse dismisses dropdown only")
- select.open_choices();await settle()
- for down in [true,false]:
-  var e:=InputEventScreenTouch.new();e.index=0;e.pressed=down;e.position=Vector2(2,2);root.push_input(e,true)
- await settle()
- check(app._top_layer()==parent_layer,"outside touch dismisses dropdown only")
- select.open_choices();await settle();select.choose(2);await settle()
- check(app.preset.remove_override==true,"deferred selection saves override without detaching viewport")
+ var gear:Button
+ for b in all(app,"Button"):
+  if b.tooltip_text=="설정":gear=b
+ gear.pressed.emit();await settle()
+ check(app._top_layer().title=="전체 설정","gear directly opens global settings")
+ check(button(app._top_layer(),"현재 룰렛 설정")==null,"no intermediate settings chooser")
+ var global=app._top_layer();all(global,"SpinBox")[0].value=9.5;await settle()
  app._close_top_layer();await settle()
- check(not app._has_layer(),"back closes last layer")
+ check(app._duration()==9.5,"default preset inherits changed global duration")
+ app._preset_settings();await settle()
+ check(app._top_layer()==app.editor_dialog and app.editor_dialog._scroll.scroll_vertical>0,"preset settings are editor bottom section")
+ var seconds=all(app.editor,"SpinBox")[0]
+ check(not seconds.editable,"inherited duration field disabled")
+ press(button(app.editor,"직접 설정"));seconds.value=3.5
+ check(app.preset.duration_override==3.5 and app._duration()==3.5,"custom duration overrides global")
+ press(button(app.editor,"제외"))
+ check(app._remove_winner() and app.preset.remove_override==true,"exclude override enabled")
+ press(button(app.editor,"유지"))
+ check(not app._remove_winner() and app.preset.remove_override==false,"retain override enabled")
+ await settle();app._close_editor();app.data.settings.duration=12;app.data.settings.remove_winner=true
+ check(app._duration()==3.5 and not app._remove_winner(),"global changes do not replace explicit overrides")
+ app._open_editor();await settle()
+ var inherit:Button
+ for b in all(app.editor,"Button"):
+  if b.text.begins_with("전체 설정 사용 ·"):inherit=b
+ press(inherit);press(button(app.editor,"전체 설정 사용"))
+ check(app.preset.duration_override==null and app._duration()==12,"inherit duration restores current global")
+ check(app.preset.remove_override==null and app._remove_winner(),"inherit removal restores current global")
+ app._close_editor();await settle()
+ var saved=Model.load_data().presets[0]
+ check(saved.duration_override==null and saved.remove_override==null,"inheritance persists as null rather than copied values")
  app.queue_free();await settle()
  for suffix in ["",".bak",".tmp"]:DirAccess.remove_absolute("user://state.json"+suffix)
  print("SELECTOR_QA: ",checks," checks, ",failures," failures")

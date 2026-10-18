@@ -16,12 +16,20 @@ func run() -> void:
  for i in range(5): await process_frame
  var kind := OS.get_cmdline_user_args()[0] if not OS.get_cmdline_user_args().is_empty() else "add"
  if kind == "add": app._add_preset_dialog()
+ elif kind == "history":
+  for i in range(5):
+   var slice: Dictionary = app.preset.slices[i % app.preset.slices.size()]
+   app.preset.history.append({"name":slice.name,"color":slice.color,"at":"2026-10-18 15:%02d:00" % (18+i*3)})
+  app._history()
+ elif kind == "global": app._settings()
  elif kind == "preset-drag":
   for title in ["점심 메뉴","주말에 할 일"]:
    var p: Dictionary = app.Model.default_data().presets[0].duplicate(true); p.id = app._id(); p.name = title; app.data.presets.append(p)
   app.preset.favorite = true; app._preset_manager()
  else: app._open_editor()
  for i in range(8): await process_frame
+ if kind == "editor-bottom":
+  app.editor_dialog._scroll.scroll_vertical = int(app.editor.get_combined_minimum_size().y)
  if kind.ends_with("drag"):
   var target: Control = app.manager_dialog if kind == "preset-drag" else app.editor
   var handle := find_handle(target)

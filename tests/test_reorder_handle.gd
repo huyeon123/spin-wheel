@@ -152,6 +152,48 @@ func _run() -> void:
 	_mouse_button(Vector2(start.x, 150), false)
 	await process_frame
 	_check(not handle._pressed and observed.is_empty(), "Hiding handle cancels active drag")
+	# One-pixel sweeps cross every insertion threshold and both viewport edges.
+	# This catches collision-avoidance teleportation independently of target changes.
+	handle.show()
+	scroll.scroll_vertical = 0
+	await process_frame
+	await process_frame
+	start = handle._viewport_rect(handle).position + Vector2(10, 12)
+	_mouse_move(start)
+	_mouse_button(start, true)
+	_mouse_move(start + Vector2(0, 8))
+	var grab_offset: float = handle._pointer.y - handle._visual.ghost.position.y
+	var previous_y: float = handle._visual.ghost.position.y
+	var largest_step := 0.0
+	var target_changes := 0
+	var previous_target: int = handle._target
+	for displacement in range(9, 401):
+		_mouse_move(start + Vector2(0, displacement))
+		var ghost_y: float = handle._visual.ghost.position.y
+		largest_step = maxf(largest_step, absf(ghost_y - previous_y))
+		_check(is_equal_approx(ghost_y - previous_y, 1.0), "Ghost follows each downward pixel without snapping")
+		_check(is_equal_approx(handle._pointer.y - ghost_y, grab_offset), "Grab offset remains fixed")
+		if handle._target != previous_target:
+			target_changes += 1
+		previous_target = handle._target
+		previous_y = ghost_y
+	_check(target_changes == 4, "Trace crosses all four insertion thresholds")
+	for displacement in range(399, -81, -1):
+		_mouse_move(start + Vector2(0, displacement))
+		var ghost_y: float = handle._visual.ghost.position.y
+		largest_step = maxf(largest_step, absf(ghost_y - previous_y))
+		_check(is_equal_approx(ghost_y - previous_y, -1.0), "Ghost follows each upward pixel without snapping")
+		previous_y = ghost_y
+	_check(is_equal_approx(largest_step, 1.0), "Maximum ghost jump is one pixel")
+	_mouse_move(start + Vector2(0, 150))
+	var stationary_y: float = handle._visual.ghost.position.y
+	handle._process(0.1)
+	_check(is_equal_approx(handle._visual.ghost.position.y, stationary_y), "Autoscroll cannot displace a stationary-pointer ghost")
+	root.push_input(escape, true)
+	_mouse_button(start, false)
+	await process_frame
+	_check(observed.is_empty(), "Continuity trace canceled without model mutation")
+	print("Ghost trace: max step %.1f px; %d insertion transitions; fixed grab offset %.1f px" % [largest_step, target_changes, grab_offset])
 	host.queue_free()
 	await process_frame
 	print("PASS: %d reorder handle checks; direct interaction and viewport mouse/touch dispatch" % checks)
