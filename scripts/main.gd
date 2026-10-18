@@ -5,12 +5,14 @@ const Model = preload("res://scripts/wheel_model.gd")
 const Reorder = preload("res://scripts/reorder_handle.gd")
 const Layer = preload("res://scripts/wheel_layer.gd")
 const Select = preload("res://scripts/wheel_select.gd")
+const WheelShadow = preload("res://scripts/wheel_shadow.gd")
 const Wheel = preload("res://scripts/wheel_canvas.gd")
 const PALETTE = ["#a89bea", "#ffcc75", "#7ad3b9", "#f69ca9", "#83b9ed", "#d8b1df", "#a8d584", "#f4b18c"]
 var data: Dictionary
 var preset: Dictionary
 var busy := false
 var wheel: Control
+var wheel_shadow: Control
 var body: GridContainer
 var editor: VBoxContainer
 var selectors: Button
@@ -190,7 +192,8 @@ func _build() -> void:
  preset_name = _label(preset.name, 25); preset_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; preset_name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; stage_box.add_child(preset_name); preset_name.hide()
  var aspect := AspectRatioContainer.new(); wheel_aspect = aspect; aspect.ratio = 1; aspect.size_flags_horizontal = Control.SIZE_EXPAND_FILL; aspect.custom_minimum_size = Vector2(240,300); stage_box.add_child(aspect)
  var wheel_holder := Control.new(); aspect.add_child(wheel_holder)
- wheel = Wheel.new(); wheel.font = font; wheel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); wheel_holder.add_child(wheel)
+ wheel_shadow = WheelShadow.new(); wheel_shadow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); wheel_holder.add_child(wheel_shadow)
+ wheel = Wheel.new(); wheel.draw_shadow = false; wheel.font = font; wheel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); wheel_holder.add_child(wheel)
  var pointer := TextureRect.new(); pointer.texture = load("res://assets/pointer.svg"); pointer.mouse_filter = Control.MOUSE_FILTER_IGNORE; pointer.expand_mode = TextureRect.EXPAND_IGNORE_SIZE; pointer.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED; pointer.anchor_left = .5; pointer.anchor_right = .5; pointer.offset_left = -16; pointer.offset_right = 16; pointer.offset_top = -2; pointer.offset_bottom = 30; wheel_holder.add_child(pointer)
  spin_button = _button("돌리기", _spin); spin_button.tooltip_text = "돌리기 (Space)"; spin_button.custom_minimum_size = Vector2(56,48); spin_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER; spin_button.add_theme_font_size_override("font_size", 21)
  spin_button.custom_minimum_size = Vector2(360,56); _accent_button(spin_button)

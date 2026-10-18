@@ -3,6 +3,7 @@ extends Control
 var slices: Array = []
 var font: Font
 var show_labels := true
+var draw_shadow := true
 
 func _ready() -> void:
  mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -12,7 +13,7 @@ func _draw() -> void:
  var c := size / 2
  var r := minf(size.x, size.y) / 2 - 12
  if r < 10: return
- draw_circle(c + Vector2(0, 3), r + 7, Color(0.12,0.14,0.16,.08), true, -1, true)
+ if draw_shadow: draw_circle(c + Vector2(0, 3), r + 7, Color(0.12,0.14,0.16,.08), true, -1, true)
  draw_circle(c, r + 5, Color.WHITE, true, -1, true)
  if slices.is_empty():
   draw_circle(c, r, Color("dce1ee"))

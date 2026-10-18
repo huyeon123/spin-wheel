@@ -120,16 +120,28 @@ func _build() -> void:
  _heading.add_theme_font_size_override("font_size", 21)
  _heading.add_theme_color_override("font_color", Color("2c332b"))
  header.add_child(_heading)
- _close = _button("")
+ # Dedicated icon control: no generic text-button padding or icon auto-fit.
+ _close = Button.new()
  _close.icon = preload("res://assets/close.svg")
- _close.expand_icon = true
- _close.add_theme_constant_override("icon_max_width", 18)
- var close_style := _style(Color("f5f6f3"), 10)
- close_style.set_content_margin_all(10)
- _close.add_theme_stylebox_override("normal", close_style)
- _close.custom_minimum_size = Vector2(40, 40)
+ _close.expand_icon = false
+ _close.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+ _close.add_theme_constant_override("icon_max_width",18)
+ _close.add_theme_constant_override("h_separation",0)
+ _close.custom_minimum_size = Vector2(40,40)
+ _close.size_flags_horizontal = Control.SIZE_SHRINK_END
+ _close.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+ _close.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+ for state in ["normal","hover","pressed","hover_pressed","disabled","focus"]:
+  var close_style := _style(Color("fff1f3"),10)
+  close_style.set_content_margin_all(8)
+  close_style.border_color = Color("efc6cc"); close_style.set_border_width_all(1)
+  if state in ["hover","pressed","hover_pressed"]: close_style.bg_color = Color("ffe3e7")
+  if state == "disabled": close_style.bg_color = Color("f8eeee")
+  if state == "focus": close_style.bg_color = Color.TRANSPARENT; close_style.border_color = Color("b83243")
+  _close.add_theme_stylebox_override(state,close_style)
+ for state in ["icon_normal_color","icon_hover_color","icon_pressed_color","icon_hover_pressed_color","icon_focus_color","icon_disabled_color"]:
+  _close.add_theme_color_override(state,Color.WHITE)
  _close.tooltip_text = "닫기"
- _close.add_theme_font_size_override("font_size", 16)
  _close.pressed.connect(request_close)
  header.add_child(_close)
  _scroll = ScrollContainer.new()

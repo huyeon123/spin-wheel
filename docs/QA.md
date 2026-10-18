@@ -122,3 +122,11 @@ Final detail regression total: **10,252 checks passed** (10,165 model,22 UI,4 la
 - Pure geometry tests pass2,766 checks over847 monitor/DPI combinations. Independent native X11 startup measured480×800 at(400,64) inside1280×900 workarea; native smoke passes2,770 checks including resize to520×800. This is not a Windows monitor/DPI runtime claim.
 - Seventeen headless suites pass14,694 checks without app errors, including76 narrow-layer checks over six overlay types at480×800,390×700,360×560 and320×480. Native button-state288 and separator3 checks also passed, totaling14,985 checks across19 suites, plus the repeated2,770-check native startup smoke.
 - Actual no-resolution-override main/editor/settings/manager portrait screenshots inspected. Version0.2.3/Android code9, same package and persistence paths.
+
+## Version 0.2.4 close-icon geometry and fixed shadow
+
+- Every layer uses a dedicated red18px close icon, centered in an unchanged40px hit target. Icon expansion is disabled; normal/hover/pressed/hover_pressed/focus/disabled styles share identical8px margins. This removes generic button padding differences that previously resized the fitted icon on hover.
+- Native framebuffer tests cover eight actual layer types across five pointer/focus/disabled states, real close clicks, and four other icon controls. Red glyph bounds remain identical; each axis stays within0.5px of the target center. The close-icon suite passes248 checks.
+- Main wheel shadow is a nonrotating sibling below the wheel, with unchanged3px downward offset, radius, alpha and color. It follows holder center/size, not wheel rotation. Static manager previews retain their unchanged shadow. Native34-check shadow regression covers cardinal rotations, both-direction drag/coast, resize and unchanged exterior shadow pixels.
+- Final21 suites pass **15,267 checks**:17 headless14,694 plus native buttons288, separators3, close icons248 and shadow34. No app errors; software-renderer VSync warning is environmental. Matrix captures and actual portrait/mobile layers are inspected before release.
+- Version0.2.4/Android code10. Existing data, wheel probabilities and portrait startup behavior are unchanged.
