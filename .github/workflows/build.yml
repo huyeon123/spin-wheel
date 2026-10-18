@@ -68,14 +68,14 @@ jobs:
         run: XDG_DATA_HOME="$(mktemp -d)" "$GODOT" --headless --path . --script tests/test_fixed_layers.gd
       - name: Test manager and reordering
         run: |
-          for suite in test_manager test_reorder_handle test_reorder_integration test_drag_continuity test_history test_history_statistics test_physics_rotation test_physics_independent test_card_dismiss test_editor_bounds test_window_geometry test_narrow_layers test_duration_input test_new_preset test_android_insets test_mobile_layout test_editor_focus test_audio test_random_landing test_overlay_animation; do
+          for suite in test_manager test_reorder_handle test_reorder_integration test_drag_continuity test_history test_history_statistics test_physics_rotation test_physics_independent test_card_dismiss test_haptics test_editor_bounds test_window_geometry test_narrow_layers test_duration_input test_new_preset test_android_insets test_mobile_layout test_editor_focus test_audio test_random_landing test_overlay_animation; do
             XDG_DATA_HOME="$(mktemp -d)" "$GODOT" --headless --path . --script "tests/$suite.gd"
           done
       - name: Test rendered button state contrast
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y xvfb xauth libgl1-mesa-dri
-          for suite in test_button_states test_wheel_pixels test_close_icons test_shadow_pixels test_duration_input test_editor_focus test_overlay_animation test_history_statistics test_android_insets test_physics_rotation test_physics_independent test_card_dismiss; do
+          for suite in test_button_states test_wheel_pixels test_close_icons test_shadow_pixels test_duration_input test_editor_focus test_overlay_animation test_history_statistics test_android_insets test_physics_rotation test_physics_independent test_card_dismiss test_haptics; do
             XDG_DATA_HOME="$(mktemp -d)" LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a "$GODOT" --path . --audio-driver Dummy --rendering-method gl_compatibility --script "tests/$suite.gd"
           done
       - name: Test native portrait startup

@@ -142,7 +142,9 @@ func _init() -> void:
 	check(restored.presets[0].id == "second" and restored.presets[1].id == "third" and restored.presets[2].id == "p", "manual preset order persists")
 	check(restored.presets[2].slices[0].id == "b" and restored.presets[2].slices[1].id == "a", "manual slice order persists")
 	check(restored.presets[2].history == first.history and restored.presets[2].remaining_ids == ["b"], "reorder preserves round and history")
-	check(restored.settings == data.settings and restored.last_preset_id == "p" and restored.version == 1, "reorder preserves settings selection and version")
+	var migrated_settings: Dictionary = data.settings.duplicate(true)
+	migrated_settings["haptics_enabled"] = true
+	check(restored.settings == migrated_settings and restored.last_preset_id == "p" and restored.version == 1, "reorder preserves settings selection and version")
 	check(Model.save_data(restored, path) == OK and Model.load_data(path) == restored, "favorite/order stable across second save reload")
 	check(Model.move_entry(data.presets, 2, 0) and is_same(data.presets[0], first), "backward move retains identity")
 	var before_move: Array = data.presets.duplicate()

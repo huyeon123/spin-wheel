@@ -1,4 +1,4 @@
-# 돌려봐 · Spin Wheel 0.2.11
+# 돌려봐 · Spin Wheel 0.2.12
 
 Windows와 Android를 위한 오프라인 룰렛 게임. Godot 4.6.3 / GDScript / Compatibility 2D 렌더러로 만들었습니다. 서버, 로그인, 광고, 네트워크 권한이 없습니다.
 
@@ -112,3 +112,8 @@ Android 내장 창에서 화면 배율이 빠지던 좌표 변환을 수정했�
 
 ### 0.2.11 물리 회전과 레이어 조작
 룰렛별 물리 회전 옵션을 추가했습니다. 기본값은 OFF이며 ON에서는 힘과 마찰에 따른 실제 정지 위치로 결과를 판정하고, 해당 기록에만 `물리`를 표시합니다. 프리셋 카드 전체를 눌러 선택하고 관리 화면을 닫을 수 있으며, 레이어 바깥 탭은 최상단 레이어만 닫습니다. 기존 저장값과 기록은 유지합니다.
+
+### 0.2.12 햅틱 테스트 후보
+전체 설정의 햅틱 스위치로 소리와 독립적인 진동을 켜고 끕니다. 회전한 각도에 맞춰 짧은 진동을 내며 초당 최대 10회로 제한하고, 당첨 시 한 번의 구분되는 진동을 사용합니다. Android의 일반 VIBRATE 권한만 추가하며 Windows에서는 진동 호출을 생략합니다. 기기의 진동 설정과 모터에 따라 실제 촉감은 달라질 수 있습니다.
+
+진동 호출은 [Godot Input.vibrate_handheld](https://docs.godotengine.org/en/4.6/classes/class_input.html#class-input-method-vibrate-handheld)를 사용합니다. 비활성화·앱 전환 시에는 [Android Vibrator.cancel](https://developer.android.com/reference/android/os/Vibrator#cancel())로 현재 펄스를 취소합니다. 하드웨어 호출과 촉감은 Android 기기에서 확인해야 하며, 자동 검사는 호출 간격·중복 방지·설정 보존을 확인합니다.

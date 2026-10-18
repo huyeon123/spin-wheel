@@ -2,6 +2,7 @@ extends Control
 
 const WheelPhysics = preload("res://scripts/wheel_physics.gd")
 const WheelAudio = preload("res://scripts/wheel_audio.gd")
+const WheelHaptics = preload("res://scripts/wheel_haptics.gd")
 const WindowGeometry = preload("res://scripts/window_geometry.gd")
 const SafeLayout = preload("res://scripts/safe_layout.gd")
 const DurationInput = preload("res://scripts/duration_input.gd")
@@ -29,6 +30,7 @@ var duration_label: Label
 var preset_name: Label
 var content_scroll: Control
 var wheel_audio: Node
+var wheel_haptics: Node
 var font := preload("res://assets/NotoSansKR.otf")
 var current_rotation := 0.0
 var tween: Tween
@@ -86,6 +88,8 @@ func _ready() -> void:
   if p.id == data.last_preset_id: preset = p
  _theme()
  wheel_audio = WheelAudio.new(); add_child(wheel_audio)
+ wheel_haptics = WheelHaptics.new(); add_child(wheel_haptics)
+ wheel_haptics.set_enabled(data.settings.haptics_enabled)
  save_timer = Timer.new()
  save_timer.one_shot = true
  save_timer.wait_time = .35
@@ -128,9 +132,11 @@ func _notification(what: int) -> void:
  if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
   _cancel_drag()
   if wheel_audio != null: wheel_audio.set_foreground(false)
+  if wheel_haptics != null: wheel_haptics.set_foreground(false)
  if what == NOTIFICATION_APPLICATION_FOCUS_IN or what == NOTIFICATION_APPLICATION_RESUMED:
   SafeLayout.resume_fullscreen()
   if wheel_audio != null: wheel_audio.set_foreground(true)
+  if wheel_haptics != null: wheel_haptics.set_foreground(application_focused and not application_paused)
  if what == NOTIFICATION_WM_GO_BACK_REQUEST:
   if not _close_top_layer():
    _save()
@@ -492,6 +498,8 @@ func _begin_spin(slices: Array) -> void:
  OS.low_processor_usage_mode = false
  wheel.slices = spin_slices; wheel.queue_redraw()
  wheel_audio.begin(wheel.rotation, data.settings.sound)
+ # Physics rebases its start to one turn; this is not real angular travel.
+ wheel_haptics.begin(fposmod(wheel.rotation, TAU) if spin_mode == "physics" else wheel.rotation, data.settings.haptics_enabled)
 
 func _process(delta: float) -> void:
  if not physics_coasting or application_paused or not application_focused: return
@@ -503,6 +511,7 @@ func _process(delta: float) -> void:
  var motion: Dictionary = WheelPhysics.sample(spin_start, spin_initial_velocity, coast_elapsed)
  wheel.rotation = motion.angle
  wheel_audio.advance(wheel.rotation, Time.get_ticks_usec() / 1000000.0, data.settings.sound)
+ wheel_haptics.advance(wheel.rotation, Time.get_ticks_usec() / 1000000.0, data.settings.haptics_enabled)
  if motion.finished:
   # Read back the rendered Control angle after normalization, avoiding a
   # double-precision winner that disagrees with its real_t display transform.
@@ -521,7 +530,9 @@ func _finish_spin(token: int, winner: Dictionary, target: float) -> void:
  # A single commit owns history, round removal and persistence in both modes.
  if spin_remove_winner: spin_preset.remaining_ids.erase(winner.id)
  busy = false; OS.low_processor_usage_mode = true
- wheel_audio.finish(data.settings.sound); _save(); _refresh_editor(); _refresh_result()
+ wheel_audio.finish(data.settings.sound)
+ wheel_haptics.finish(data.settings.haptics_enabled)
+ _save(); _refresh_editor(); _refresh_result()
  # Keep the landed slice snapshot until the next spin/reset.
  spin_button.disabled = Model.active_slices(preset).size() < 2
  status.text = "라운드를 복원해 다시 시작하세요." if spin_button.disabled else ""
@@ -561,7 +572,14 @@ func _settings() -> void:
   data.settings.sound = v
   if not v: wheel_audio.stop()
   _changed())
+ var haptics := CheckButton.new(); haptics.name = "HapticsEnabled"; haptics.text = "회전 · 당첨 햅틱"; haptics.button_pressed = data.settings.haptics_enabled; box.add_child(haptics)
+ haptics.toggled.connect(_set_haptics_enabled)
  _show_settings_layer(dialog)
+
+func _set_haptics_enabled(value: bool) -> void:
+ data.settings.haptics_enabled = value
+ wheel_haptics.set_enabled(value)
+ _changed()
 
 func _preset_settings() -> void:
  _open_editor()
@@ -798,6 +816,7 @@ func _animate_spin(t: float) -> void:
  var t3 := t2 * t
  wheel.rotation = spin_start + v * t + (10 * spin_distance - 6 * v) * t3 + (-15 * spin_distance + 8 * v) * t3 * t + (6 * spin_distance - 3 * v) * t3 * t2
  wheel_audio.advance(wheel.rotation, Time.get_ticks_usec() / 1000000.0, data.settings.sound)
+ wheel_haptics.advance(wheel.rotation, Time.get_ticks_usec() / 1000000.0, data.settings.haptics_enabled)
 
 func _wheel_position(viewport_position: Vector2) -> Vector2:
  var holder := wheel.get_parent() as Control
@@ -831,6 +850,7 @@ func _begin_drag(position_value: Vector2, pointer: int) -> void:
  var radius := minf(wheel.size.x, wheel.size.y) / 2 - 12
  if local.length() > radius or local.length() < radius * .22: return
  wheel_audio.begin(wheel.rotation, data.settings.sound)
+ wheel_haptics.begin(wheel.rotation, data.settings.haptics_enabled)
  dragging = true; busy = true; drag_pointer = pointer
  drag_last_angle = local.angle(); drag_last_time = Time.get_ticks_usec() / 1000000.0
  drag_distance = 0; drag_velocity = 0
@@ -847,6 +867,7 @@ func _move_drag(position_value: Vector2) -> void:
  var delta_angle := wrapf(local.angle() - drag_last_angle, -PI, PI)
  wheel.rotation += delta_angle
  wheel_audio.advance(wheel.rotation, now, data.settings.sound)
+ wheel_haptics.advance(wheel.rotation, now, data.settings.haptics_enabled)
  drag_distance += absf(delta_angle)
  var sample := clampf(delta_angle / dt, -40, 40)
  drag_velocity = sample if drag_distance < .2 else lerpf(drag_velocity, sample, .65)
@@ -863,12 +884,14 @@ func _end_drag() -> void:
  if should_spin: _spin(signf(velocity), absf(velocity))
  else:
   wheel_audio.stop()
+  wheel_haptics.stop()
   OS.low_processor_usage_mode = true
  get_viewport().set_input_as_handled()
 
 func _cancel_drag() -> void:
  if not dragging: return
  wheel_audio.stop()
+ wheel_haptics.stop()
  dragging = false; busy = false; drag_pointer = -2
  current_rotation = fposmod(wheel.rotation, TAU)
  OS.low_processor_usage_mode = true

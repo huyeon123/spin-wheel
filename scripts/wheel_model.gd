@@ -7,7 +7,7 @@ const MAX_SLICES := 200
 const TAU_VALUE := PI * 2.0
 
 static func default_data() -> Dictionary:
-	return {"version": 1, "settings": {"duration": 6.0, "remove_winner": false, "sound": true}, "last_preset_id": "default", "presets": [{"id": "default", "name": "오늘의 작은 즐거움", "favorite": false, "physics_enabled": false, "mode": "ratio", "slices": [{"id": "default_1", "name": "커피 한 잔", "color": "#a89bea", "weight": 1.0}, {"id": "default_2", "name": "가벼운 산책", "color": "#ffcc75", "weight": 1.0}, {"id": "default_3", "name": "좋아하는 음악", "color": "#7ad3b9", "weight": 1.0}, {"id": "default_4", "name": "달콤한 간식", "color": "#f69ca9", "weight": 1.0}], "duration_override": null, "remove_override": null, "history": [], "remaining_ids": ["default_1", "default_2", "default_3", "default_4"]}]}
+	return {"version": 1, "settings": {"duration": 6.0, "remove_winner": false, "sound": true, "haptics_enabled": true}, "last_preset_id": "default", "presets": [{"id": "default", "name": "오늘의 작은 즐거움", "favorite": false, "physics_enabled": false, "mode": "ratio", "slices": [{"id": "default_1", "name": "커피 한 잔", "color": "#a89bea", "weight": 1.0}, {"id": "default_2", "name": "가벼운 산책", "color": "#ffcc75", "weight": 1.0}, {"id": "default_3", "name": "좋아하는 음악", "color": "#7ad3b9", "weight": 1.0}, {"id": "default_4", "name": "달콤한 간식", "color": "#f69ca9", "weight": 1.0}], "duration_override": null, "remove_override": null, "history": [], "remaining_ids": ["default_1", "default_2", "default_3", "default_4"]}]}
 
 static func move_entry(entries: Array, from: int, to: int) -> bool:
 	# `to` is the final index; move references without cloning or sorting.
@@ -157,7 +157,7 @@ static func _sanitize(raw: Variant) -> Dictionary:
 	if settings is Dictionary:
 		if _number(settings.get("duration")):
 			result.settings.duration = clampf(float(settings.duration), 1.0, 30.0)
-		for key in ["remove_winner", "sound"]:
+		for key in ["remove_winner", "sound", "haptics_enabled"]:
 			if settings.get(key) is bool:
 				result.settings[key] = settings[key]
 	var preset_ids := {}

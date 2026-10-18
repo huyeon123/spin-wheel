@@ -76,6 +76,8 @@ scripts/wheel_audio.gd
 scripts/wheel_audio.gd.uid
 scripts/wheel_canvas.gd
 scripts/wheel_canvas.gd.uid
+scripts/wheel_haptics.gd
+scripts/wheel_haptics.gd.uid
 scripts/wheel_layer.gd
 scripts/wheel_layer.gd.uid
 scripts/wheel_model.gd
@@ -118,6 +120,8 @@ tests/test_fixed_layers.gd
 tests/test_fixed_layers.gd.uid
 tests/test_gestures.gd
 tests/test_gestures.gd.uid
+tests/test_haptics.gd
+tests/test_haptics.gd.uid
 tests/test_history.gd
 tests/test_history.gd.uid
 tests/test_history_statistics.gd
