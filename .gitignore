@@ -1,0 +1,10 @@
+.godot/
+build/
+*.keystore
+*.jks
+*.apk
+*.exe
+*.pck
+*.zip
+*.log
+.DS_Store
