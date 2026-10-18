@@ -1,0 +1,41 @@
+# Isolated size experiment. Retains complete GUI, GDScript, advanced text server,
+# font rasterization, SVG/WebP/PNG support, WAV audio and GL Compatibility.
+platform = 'android'
+target = 'template_release'
+arch = 'arm64'
+optimize = 'size'
+lto = 'none'
+debug_symbols = False
+disable_3d = True
+disable_physics_2d = True
+disable_physics_3d = True
+disable_navigation_2d = True
+disable_navigation_3d = True
+vulkan = False
+opengl3 = True
+# Only unused subsystems and non-WAV audio/video codecs are removed.
+module_camera_enabled = False
+module_csg_enabled = False
+module_enet_enabled = False
+module_fbx_enabled = False
+module_gltf_enabled = False
+module_gridmap_enabled = False
+module_interactive_music_enabled = False
+module_jsonrpc_enabled = False
+module_lightmapper_rd_enabled = False
+module_mobile_vr_enabled = False
+module_multiplayer_enabled = False
+module_noise_enabled = False
+module_openxr_enabled = False
+module_raycast_enabled = False
+module_upnp_enabled = False
+module_vhacd_enabled = False
+module_webrtc_enabled = False
+module_websocket_enabled = False
+module_webxr_enabled = False
+module_mp3_enabled = False
+module_ogg_enabled = False
+module_vorbis_enabled = False
+module_theora_enabled = False
+module_zip_enabled = False
+module_xatlas_unwrap_enabled = False

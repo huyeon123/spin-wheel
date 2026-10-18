@@ -180,8 +180,8 @@ func _build() -> void:
   if property.name == "accessibility_name": gear.set("accessibility_name", "설정")
  result_panel = PanelContainer.new(); result_panel.name = "MainResult"; result_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new()); content_scroll.add_child(result_panel)
  var lr := _row(); result_panel.add_child(lr)
- result = _label("", 20); result.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; result.vertical_alignment = VERTICAL_ALIGNMENT_CENTER; result.size_flags_horizontal = Control.SIZE_EXPAND_FILL
- result.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; lr.add_child(result)
+ result = _label("", 32); result.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; result.vertical_alignment = VERTICAL_ALIGNMENT_CENTER; result.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+ result.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; result.max_lines_visible = 2; result.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS; lr.add_child(result)
  stage_spacer = Control.new(); stage_spacer.hide(); content_scroll.add_child(stage_spacer)
  body = GridContainer.new(); body.name = "WheelStage"; body.columns = 1; body.mouse_filter = Control.MOUSE_FILTER_IGNORE; content_scroll.add_child(body)
  wheel_aspect = AspectRatioContainer.new(); wheel_aspect.ratio = 1; wheel_aspect.size_flags_horizontal = Control.SIZE_EXPAND_FILL; wheel_aspect.size_flags_vertical = Control.SIZE_EXPAND_FILL; body.add_child(wheel_aspect)
@@ -207,7 +207,7 @@ func _build() -> void:
    var compact_style := action.get_theme_stylebox(state).duplicate() as StyleBoxFlat
    compact_style.set_content_margin_all(8)
    action.add_theme_stylebox_override(state,compact_style)
- editor_dialog = Layer.new(); editor_dialog.theme = theme; editor_dialog.title = "룰렛 편집"; editor_dialog.max_width = 760; editor_dialog.show_footer = false; editor_dialog.ok_button_text = "닫기"; editor_dialog.exclusive = true; add_child(editor_dialog)
+ editor_dialog = Layer.new(); editor_dialog.focus_content_on_open = false; editor_dialog.theme = theme; editor_dialog.title = "룰렛 편집"; editor_dialog.max_width = 760; editor_dialog.show_footer = false; editor_dialog.ok_button_text = "닫기"; editor_dialog.exclusive = true; add_child(editor_dialog)
  editor_dialog.confirmed.connect(_close_editor); editor_dialog.canceled.connect(_close_editor)
  editor = VBoxContainer.new(); editor.size_flags_horizontal = Control.SIZE_EXPAND_FILL; editor.add_theme_constant_override("separation", 16); editor_dialog.add_content(editor)
  _refresh_editor(); _refresh_wheel(); _refresh_result()

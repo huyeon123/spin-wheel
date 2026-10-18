@@ -61,7 +61,7 @@ static func compute_main(viewport_bounds: Rect2, safe_bounds: Rect2,
 	var inner := inset_rect(safe, pad, pad)
 	var gap := 8.0 if compact else 12.0
 	var header_height := 48.0
-	var result_height := 28.0 if compact else 40.0
+	var result_height := 104.0
 	var spin_height := 56.0
 	var action_height := 48.0
 	var action_gap := 12.0 if compact else 20.0

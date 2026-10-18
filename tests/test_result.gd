@@ -12,6 +12,10 @@ func check(ok: bool, label: String) -> void:
 func settle() -> void:
  for i in range(5): await process_frame
 func check_result(app: Control, expected: String) -> void:
+ check(app.result.get_theme_font_size("font_size")==32,"winner text uses approved32px size")
+ check(app.result.max_lines_visible==2 and app.result.autowrap_mode!=TextServer.AUTOWRAP_OFF,"winner wraps at most two lines")
+ check(app.result.get_global_rect().end.y<=app.wheel.get_parent().get_global_rect().position.y,"full result area does not overlap wheel")
+ check(app.result.get_minimum_size().y<=app.result.size.y+1,"result line height fits allocated region")
  check(app.result.text==expected,"result retains winner text")
  check(app.result.is_visible_in_tree(),"nonempty result visible")
  check(app.result.size.x>=40,"nonempty result has readable width rather than blank1px pill")
@@ -38,6 +42,8 @@ func run() -> void:
  check_result(app,long_name)
  root.size=Vector2i(1280,820); await settle()
  check_result(app,long_name)
+ for dimensions in [Vector2i(390,844),Vector2i(320,480),Vector2i(480,400)]:
+  root.size=dimensions;await settle();check_result(app,long_name)
  app.preset.history.clear(); app._refresh_result(); await settle()
  check(app.result.text.is_empty(),"history reset clears result text")
  app.queue_free(); await settle()

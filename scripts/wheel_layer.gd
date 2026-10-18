@@ -32,6 +32,8 @@ var show_footer := true:
  set(value):
   show_footer = value
   if is_instance_valid(_footer): _footer.visible = value
+## Disable for browse-first editors so opening never summons a mobile keyboard.
+var focus_content_on_open := true
 var is_dropdown := false
 var dropdown_anchor := Rect2()
 var content: VBoxContainer
@@ -98,6 +100,7 @@ func _build() -> void:
  add_child(dim)
  dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
  card = PanelContainer.new()
+ card.focus_mode = Control.FOCUS_CLICK
  var panel := _style(Color("ffffff"), 22)
  panel.set_content_margin_all(8 if is_dropdown else 22)
  if is_dropdown: panel.set_corner_radius_all(12); panel.border_color = Color("d9dcd6"); panel.set_border_width_all(1)
@@ -203,6 +206,7 @@ func popup_centered(target: Vector2i = Vector2i.ZERO) -> void:
  z_index = 100 + _open_layers.size() * 2
  _preferred = target
  show()
+ if not focus_content_on_open: card.grab_focus()
  layout_card()
  _settle_layout.call_deferred()
  _focus_initial.call_deferred()
@@ -283,6 +287,10 @@ func _focus_initial() -> void:
  if not is_inside_tree(): return
  await get_tree().process_frame
  if not is_inside_tree() or not visible or not _is_topmost(): return
+ if not focus_content_on_open:
+  card.grab_focus()
+  _scroll.scroll_vertical = 0
+  return
  var choices: Array[Control] = []
  _collect_focus(content, choices)
  if not choices.is_empty(): choices[0].grab_focus()
@@ -312,7 +320,8 @@ func _input(event: InputEvent) -> void:
   if not choices.is_empty():
    var current := choices.find(get_viewport().gui_get_focus_owner())
    var step := -1 if event.shift_pressed else 1
-   choices[posmod(current + step, choices.size())].grab_focus()
+   var next := (choices.size() - 1 if event.shift_pressed else 0) if current < 0 else posmod(current + step, choices.size())
+   choices[next].grab_focus()
   get_viewport().set_input_as_handled()
 
 func _disable_native_menus(node: Node) -> void:
