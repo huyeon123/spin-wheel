@@ -3,6 +3,8 @@ const Safe=preload("res://scripts/safe_layout.gd")
 var checks:=0
 var failures:=0
 func _init()->void:
+ # Legacy behavior fixtures explicitly opt out; real timing is tested separately.
+ load("res://scripts/wheel_layer.gd").reduced_motion = true
  if FileAccess.file_exists("user://state.json"):quit(2);return
  call_deferred("run")
 func check(ok:bool,label:String)->void:

@@ -5,6 +5,12 @@ signal confirmed
 signal canceled
 signal close_requested
 
+const ENTER_SECONDS := 0.18
+const EXIT_SECONDS := 0.14
+const TRAVEL_PIXELS := 10.0
+## Injectable accessibility preference: host/platform integration may set this.
+## Godot 4.6 has no cross-platform native reduced-motion preference API.
+static var reduced_motion := false
 static var _open_layers: Array[Control] = []
 var title := "":
  set(value):
@@ -49,6 +55,15 @@ var _opener: WeakRef
 var _confirmation := false
 var _preferred := Vector2i.ZERO
 var _built := false
+var _transition: Tween
+var _closing := false
+var _transition_id := 0
+var _rest_position := Vector2.ZERO
+var _motion_offset := 0.0:
+ set(value):
+  _motion_offset = value
+  if is_instance_valid(card): card.position = _rest_position + Vector2(0, value)
+var _exit_blocker: Control
 
 func _init() -> void:
  visible = false
@@ -178,6 +193,12 @@ func _build() -> void:
  _ok = _button(ok_button_text, true)
  _ok.pressed.connect(_accept)
  _footer.add_child(_ok)
+ # Keeps the card inert through exit while the full-screen layer still blocks input.
+ _exit_blocker = Control.new()
+ _exit_blocker.mouse_filter = Control.MOUSE_FILTER_STOP
+ add_child(_exit_blocker)
+ _exit_blocker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+ _exit_blocker.hide()
 
 func add_content(node: Control) -> void:
  _build()
@@ -197,13 +218,19 @@ func set_confirmation(enabled: bool = true) -> void:
 func popup_centered(target: Vector2i = Vector2i.ZERO) -> void:
  _build()
  if not is_inside_tree(): return
+ var was_visible := visible
+ _stop_transition()
+ _closing = false
+ _exit_blocker.hide()
  if not visible:
   var owner := get_viewport().gui_get_focus_owner()
   if is_instance_valid(owner): _opener = weakref(owner)
  _open_layers.erase(self)
  _open_layers.append(self)
- z_as_relative = false
- z_index = 100 + _open_layers.size() * 2
+ for i in range(_open_layers.size()):
+  if is_instance_valid(_open_layers[i]):
+   _open_layers[i].z_as_relative = false
+   _open_layers[i].z_index = 100 + (i + 1) * 2
  _preferred = target
  show()
  if not focus_content_on_open: card.grab_focus()
@@ -211,6 +238,17 @@ func popup_centered(target: Vector2i = Vector2i.ZERO) -> void:
  _settle_layout.call_deferred()
  _focus_initial.call_deferred()
  _disable_native_menus.call_deferred(content)
+ if reduced_motion:
+  modulate.a = 1.0
+  _motion_offset = 0.0
+ else:
+  if not was_visible:
+   modulate.a = 0.0
+   _motion_offset = TRAVEL_PIXELS
+  _transition = create_tween().set_parallel(true)
+  _transition.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+  _transition.tween_property(self, "modulate:a", 1.0, ENTER_SECONDS)
+  _transition.tween_property(self, "_motion_offset", 0.0, ENTER_SECONDS)
 
 func layout_card(target: Vector2i = Vector2i.ZERO) -> void:
  if not is_inside_tree() or not _built: return
@@ -241,6 +279,8 @@ func layout_card(target: Vector2i = Vector2i.ZERO) -> void:
  else:
   card.size = Vector2(width, height)
   card.position = card_area.position + (card_area.size - card.size) * 0.5
+ _rest_position = card.position
+ card.position = _rest_position + Vector2(0, _motion_offset)
  _keep_focus_visible.call_deferred()
 
 func _keep_focus_visible() -> void:
@@ -256,23 +296,60 @@ func _settle_layout() -> void:
  await get_tree().process_frame
  if is_inside_tree() and visible: layout_card()
 
-func _accept() -> void:
+func _stop_transition() -> void:
+ _transition_id += 1
+ if is_instance_valid(_transition): _transition.kill()
+ _transition = null
+
+## Callers that switch or destroy a layer must defer that action until exit completes.
+func dismiss(after_close: Callable = Callable()) -> void:
+ if _closing: return
+ if not visible:
+  if after_close.is_valid(): after_close.call_deferred()
+  return
+ _stop_transition()
+ _closing = true
+ _exit_blocker.show()
+ card.grab_focus()
+ var token := _transition_id
+ if reduced_motion:
+  _finish_dismiss.call_deferred(token, after_close)
+  return
+ _transition = create_tween().set_parallel(true)
+ _transition.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+ _transition.tween_property(self, "modulate:a", 0.0, EXIT_SECONDS)
+ _transition.tween_property(self, "_motion_offset", TRAVEL_PIXELS, EXIT_SECONDS)
+ _transition.chain().tween_callback(_finish_dismiss.bind(token, after_close))
+
+func _finish_dismiss(token: int, after_close: Callable) -> void:
+ if token != _transition_id or not _closing: return
+ _closing = false
  hide()
- confirmed.emit()
+ _deliver_dismiss.call_deferred(_transition_id, after_close)
+
+func _deliver_dismiss(token: int, after_close: Callable) -> void:
+ if token != _transition_id or visible: return
+ if after_close.is_valid(): after_close.call()
+
+func _accept() -> void:
+ dismiss(func(): confirmed.emit())
 
 func request_close() -> void:
- if not visible: return
- hide()
- close_requested.emit()
- canceled.emit()
+ if not visible or _closing: return
+ dismiss(func():
+  close_requested.emit()
+  canceled.emit())
 
 func _visibility_updated() -> void:
  if not visible:
+  _stop_transition()
+  _closing = false
   _open_layers.erase(self)
   _restore_weak_focus.call_deferred(_opener)
   _opener = null
 
 func _exit_tree() -> void:
+ _stop_transition()
  _open_layers.erase(self)
  _restore_weak_focus.call_deferred(_opener)
  _opener = null
@@ -281,12 +358,17 @@ static func _restore_weak_focus(reference: WeakRef) -> void:
  if reference == null: return
  var previous = reference.get_ref()
  if is_instance_valid(previous) and previous.is_inside_tree() and previous.is_visible_in_tree():
+  # A newer modal owns focus; never restore behind it during a layer switch/reopen.
+  if not _open_layers.is_empty():
+   var top: Control = _open_layers.back()
+   if is_instance_valid(top) and top.is_visible_in_tree() and previous != top and not top.is_ancestor_of(previous): return
   previous.grab_focus()
 
 func _focus_initial() -> void:
  if not is_inside_tree(): return
+ var token := _transition_id
  await get_tree().process_frame
- if not is_inside_tree() or not visible or not _is_topmost(): return
+ if not is_inside_tree() or not visible or _closing or token != _transition_id or not _is_topmost(): return
  if not focus_content_on_open:
   card.grab_focus()
   _scroll.scroll_vertical = 0
@@ -310,6 +392,9 @@ func _collect_focus(node: Node, result: Array[Control]) -> void:
 
 func _input(event: InputEvent) -> void:
  if not visible or not _is_topmost(): return
+ if _closing:
+  get_viewport().set_input_as_handled()
+  return
  if is_dropdown and event is InputEventScreenTouch and event.pressed and not card.get_global_rect().has_point(event.position):
   get_viewport().set_input_as_handled()
   request_close.call_deferred()

@@ -55,6 +55,9 @@ func get_item_count() -> int:
 
 func open_choices() -> void:
  if disabled or items.is_empty(): return
+ if is_instance_valid(popup) and popup.visible:
+  popup.popup_centered()
+  return
  if is_instance_valid(popup): popup.queue_free()
  popup = Layer.new(); popup.is_dropdown = true; popup.dropdown_anchor = get_global_rect(); popup.show_footer = false
  get_tree().current_scene.add_child(popup)
@@ -81,9 +84,16 @@ func open_choices() -> void:
  if selected >= 0: list.get_child(selected).grab_focus.call_deferred()
 
 func choose(index: int) -> void:
- select(index)
- if is_instance_valid(popup): popup.hide(); popup.queue_free()
- _emit_choice.call_deferred(index)
+ if is_instance_valid(popup):
+  var closing_popup := popup
+  closing_popup.dismiss(func():
+   closing_popup.queue_free()
+   if is_inside_tree():
+    select(index)
+    _emit_choice.call_deferred(index))
+ else:
+  select(index)
+  _emit_choice.call_deferred(index)
 
 func _emit_choice(index: int) -> void:
  if is_inside_tree(): item_selected.emit(index)

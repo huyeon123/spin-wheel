@@ -8,6 +8,8 @@ func check(value: bool, label: String) -> void:
   failures += 1
   push_error(label)
 func _init() -> void:
+ # Legacy behavior fixtures explicitly opt out; real timing is tested separately.
+ load("res://scripts/wheel_layer.gd").reduced_motion = true
  if FileAccess.file_exists("user://state.json"):
   push_error("UI tests require a fresh isolated user data directory; refusing to modify existing data.")
   quit(2)

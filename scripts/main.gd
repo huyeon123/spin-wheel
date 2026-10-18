@@ -261,9 +261,11 @@ func _open_editor() -> void:
  editor_dialog.popup_centered(Vector2i(760, 720))
 
 func _close_editor() -> void:
+ if editor_dialog.visible:
+  editor_dialog.dismiss(_close_editor)
+  return
  _commit_inputs(editor)
  editor_dialog.hide()
- if is_instance_valid(editor_opener) and editor_opener.is_inside_tree(): editor_opener.grab_focus.call_deferred()
  _save()
  _refresh_wheel()
 
@@ -549,12 +551,12 @@ func _history(page: int = 0) -> void:
    var timestamp := _label(str(h.at),13); timestamp.add_theme_color_override("font_color",Color("737d78")); detail.add_child(timestamp)
   if i > end + 1: list.add_child(HSeparator.new())
  var paging := _row(); box.add_child(paging)
- if page > 0: paging.add_child(_button("최근 기록", func(): history_dialog.queue_free(); _history(page - 1)))
- if end >= 0: paging.add_child(_button("이전 기록", func(): history_dialog.queue_free(); _history(page + 1)))
+ if page > 0: paging.add_child(_button("최근 기록", func(): _switch_layer(history_dialog, func(): _history(page - 1))))
+ if end >= 0: paging.add_child(_button("이전 기록", func(): _switch_layer(history_dialog, func(): _history(page + 1))))
  var footer := _row(); box.add_child(footer)
  var count := _label("%d개 기록" % preset.history.size(),14); count.size_flags_horizontal = Control.SIZE_EXPAND_FILL; footer.add_child(count)
  var reset := _button("기록 초기화", func():
-  _confirm("기록 초기화", "이 룰렛의 당첨 기록을 모두 지울까요? 되돌릴 수 없습니다.", func(): preset.history.clear(); _save(); _refresh_result(); history_dialog.queue_free()))
+  _confirm("기록 초기화", "이 룰렛의 당첨 기록을 모두 지울까요? 되돌릴 수 없습니다.", func(): preset.history.clear(); _save(); _refresh_result(); history_dialog.dismiss(history_dialog.queue_free)))
  _danger_button(reset); reset.disabled = preset.history.is_empty(); footer.add_child(reset)
  history_dialog.confirmed.connect(history_dialog.queue_free); history_dialog.canceled.connect(history_dialog.queue_free); history_dialog.popup_centered()
 
@@ -577,7 +579,8 @@ func _has_layer() -> bool:
  return _top_layer() != null
 
 func _top_layer() -> Control:
- var layers := get_tree().get_nodes_in_group("wheel_layers")
+ # Reopening an existing modal changes visual stack order, not scene-tree order.
+ var layers := Layer._open_layers
  for i in range(layers.size() - 1, -1, -1):
   if is_instance_valid(layers[i]) and layers[i].is_visible_in_tree(): return layers[i]
  return null
@@ -619,7 +622,9 @@ func _settings_hub() -> void:
  _settings()
 
 func _switch_layer(dialog: Control, action: Callable) -> void:
- dialog.hide(); dialog.queue_free(); action.call_deferred()
+ dialog.dismiss(func():
+  dialog.queue_free()
+  action.call_deferred())
 
 func _animate_spin(t: float) -> void:
  # Quintic trajectory matches release velocity and ends with zero velocity/acceleration.
@@ -767,6 +772,9 @@ func _reorder_presets(from_index: int, to_index: int) -> void:
 
 func _preset_manager() -> void:
  if busy: return
+ if is_instance_valid(manager_dialog) and manager_dialog.visible:
+  manager_dialog.popup_centered(Vector2i(620,680))
+  return
  if is_instance_valid(manager_dialog): manager_dialog.queue_free()
  manager_dialog = Layer.new(); manager_dialog.title = "프리셋 관리"; manager_dialog.show_footer = false; add_child(manager_dialog)
  manager_dialog.canceled.connect(manager_dialog.queue_free)
@@ -817,8 +825,9 @@ func _manager_select(id: String) -> void:
 func _manager_edit(id: String) -> void:
  if busy: return
  _manager_select(id)
- if is_instance_valid(manager_dialog): manager_dialog.hide(); manager_dialog.queue_free()
- _open_editor()
+ if is_instance_valid(manager_dialog):
+  _switch_layer(manager_dialog, _open_editor)
+ else: _open_editor()
 
 func _manager_delete(id: String) -> void:
  if busy or data.presets.size() <= 1: return

@@ -1,6 +1,9 @@
 extends SceneTree
 var failures := 0
-func _init() -> void: call_deferred("run")
+func _init() -> void:
+ # Legacy behavior fixtures explicitly opt out; real timing is tested separately.
+ load("res://scripts/wheel_layer.gd").reduced_motion = true
+ call_deferred("run")
 func settle() -> void:
  for i in range(5): await process_frame
 func fits(app: Control, label: String) -> void:
